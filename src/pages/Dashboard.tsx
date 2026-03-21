@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { Award, Flame, BookOpen, Zap, TrendingUp, Clock } from "lucide-react";
 import { sampleUserProgress, sampleCourses } from "@/lib/data";
 import Navbar from "@/components/Navbar";
+import AISuggestions from "@/components/AISuggestions";
+import AILearningPath from "@/components/AILearningPath";
 import useScrollReveal from "@/hooks/use-scroll-reveal";
 
 const xpForLevel = (level: number) => level * 300;
