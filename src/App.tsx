@@ -25,6 +25,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <AIAssistant />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

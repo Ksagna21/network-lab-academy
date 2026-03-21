@@ -132,6 +132,14 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* AI Learning Path */}
+        <div className="mb-10">
+          <AILearningPath />
+        </div>
+
+        {/* AI Suggestions */}
+        <AISuggestions />
       </div>
     </div>
   );
