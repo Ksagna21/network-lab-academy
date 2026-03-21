@@ -8,6 +8,7 @@ import Courses from "./pages/Courses";
 import CourseDetail from "./pages/CourseDetail";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import AIAssistant from "./components/AIAssistant";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <AIAssistant />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
