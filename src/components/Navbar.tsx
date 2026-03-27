@@ -10,6 +10,8 @@ const Navbar = () => {
   const links = [
     { to: "/", label: "Accueil" },
     { to: "/courses", label: "Cours" },
+    { to: "/labs", label: "Labs" },
+    { to: "/career", label: "Carrière" },
     { to: "/dashboard", label: "Tableau de bord" },
   ];
 
