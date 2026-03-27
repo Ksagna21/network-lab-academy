@@ -142,7 +142,7 @@ const CourseDetail = () => {
                     Utilisez le terminal intégré pour pratiquer les commandes vues dans cette leçon.
                   </p>
                 </div>
-                <div className="mt-6 flex gap-2">
+                <div className="mt-6 flex gap-2 flex-wrap">
                   <Button className="bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.97]">
                     Marquer comme terminé
                   </Button>
@@ -150,6 +150,13 @@ const CourseDetail = () => {
                     <TerminalIcon className="w-4 h-4 mr-2" />
                     Pratiquer
                   </Button>
+                  {courseId === "reseaux-tcp-ip" && (
+                    <Button asChild variant="outline">
+                      <Link to="/lesson/ip-addressing-lesson">
+                        📖 Voir la leçon complète (5 étapes)
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             ) : (

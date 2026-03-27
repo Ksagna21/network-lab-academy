@@ -7,6 +7,9 @@ import Index from "./pages/Index";
 import Courses from "./pages/Courses";
 import CourseDetail from "./pages/CourseDetail";
 import Dashboard from "./pages/Dashboard";
+import LessonView from "./pages/LessonView";
+import Labs from "./pages/Labs";
+import CareerPaths from "./pages/CareerPaths";
 import NotFound from "./pages/NotFound";
 import AIAssistant from "./components/AIAssistant";
 
@@ -22,6 +25,9 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/courses" element={<Courses />} />
           <Route path="/course/:courseId" element={<CourseDetail />} />
+          <Route path="/lesson/:lessonId" element={<LessonView />} />
+          <Route path="/labs" element={<Labs />} />
+          <Route path="/career" element={<CareerPaths />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
