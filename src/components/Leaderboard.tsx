@@ -11,7 +11,7 @@ const Leaderboard = () => {
 
       <div className="divide-y">
         {leaderboardData.map((user) => {
-          const levelInfo = gamificationLevels.findLast((l) => user.xp >= l.xpRequired);
+          const levelInfo = [...gamificationLevels].reverse().find((l) => user.xp >= l.xpRequired);
           return (
             <div
               key={user.rank}
