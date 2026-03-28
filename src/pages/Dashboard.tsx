@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Award, Flame, BookOpen, Zap, TrendingUp, Clock } from "lucide-react";
 import { sampleUserProgress, sampleCourses } from "@/lib/data";
+import { useAuth } from "@/hooks/useAuth";
 import Navbar from "@/components/Navbar";
 import AISuggestions from "@/components/AISuggestions";
 import AILearningPath from "@/components/AILearningPath";
