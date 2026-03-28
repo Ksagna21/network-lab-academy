@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Award, Flame, BookOpen, Zap, TrendingUp, Clock } from "lucide-react";
 import { sampleUserProgress, sampleCourses } from "@/lib/data";
+import { useAuth } from "@/hooks/useAuth";
 import Navbar from "@/components/Navbar";
 import AISuggestions from "@/components/AISuggestions";
 import AILearningPath from "@/components/AILearningPath";
@@ -9,6 +10,7 @@ import useScrollReveal from "@/hooks/use-scroll-reveal";
 const xpForLevel = (level: number) => level * 300;
 
 const Dashboard = () => {
+  const { profile } = useAuth();
   const p = sampleUserProgress;
   const header = useScrollReveal();
   const statsSection = useScrollReveal({ delay: 100 });
@@ -27,7 +29,7 @@ const Dashboard = () => {
         {/* Header */}
         <div ref={header.ref} style={header.style} className="mb-10">
           <h1 className="text-3xl md:text-4xl font-display font-bold mb-1">Tableau de bord</h1>
-          <p className="text-muted-foreground text-lg">Bienvenue, Étudiant ! Continuez votre progression.</p>
+          <p className="text-muted-foreground text-lg">Bienvenue, {profile?.full_name?.split(" ")[0] || "Étudiant"} 👋 Continuez votre progression.</p>
         </div>
 
         {/* Stats grid */}
