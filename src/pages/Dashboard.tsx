@@ -29,7 +29,7 @@ const Dashboard = () => {
         {/* Header */}
         <div ref={header.ref} style={header.style} className="mb-10">
           <h1 className="text-3xl md:text-4xl font-display font-bold mb-1">Tableau de bord</h1>
-          <p className="text-muted-foreground text-lg">Bienvenue, Étudiant ! Continuez votre progression.</p>
+          <p className="text-muted-foreground text-lg">Bienvenue, {profile?.full_name?.split(" ")[0] || "Étudiant"} 👋 Continuez votre progression.</p>
         </div>
 
         {/* Stats grid */}
