@@ -10,6 +10,7 @@ import useScrollReveal from "@/hooks/use-scroll-reveal";
 const xpForLevel = (level: number) => level * 300;
 
 const Dashboard = () => {
+  const { profile } = useAuth();
   const p = sampleUserProgress;
   const header = useScrollReveal();
   const statsSection = useScrollReveal({ delay: 100 });
