@@ -1,11 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
-import { Terminal, Menu, X } from "lucide-react";
+import { Terminal, Menu, X, Shield } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { user, profile, signOut, isAdmin, isInstructor } = useAuth();
 
   const links = [
     { to: "/", label: "Accueil" },
@@ -41,10 +43,33 @@ const Navbar = () => {
         </div>
 
         <div className="hidden md:flex items-center gap-2">
-          <Button variant="ghost" size="sm">Connexion</Button>
-          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.97] transition-all">
-            S'inscrire
-          </Button>
+          {user ? (
+            <>
+              {(isAdmin || isInstructor) && (
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/admin" className="flex items-center gap-1">
+                    <Shield className="w-3.5 h-3.5" />
+                    Admin
+                  </Link>
+                </Button>
+              )}
+              <span className="text-sm text-muted-foreground">
+                {profile?.full_name?.split(" ")[0] || "User"}
+              </span>
+              <Button variant="ghost" size="sm" onClick={signOut}>
+                Déconnexion
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/auth">Connexion</Link>
+              </Button>
+              <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.97] transition-all">
+                <Link to="/auth">S'inscrire</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Mobile toggle */}
@@ -66,9 +91,26 @@ const Navbar = () => {
               {link.label}
             </Link>
           ))}
+          {user && (isAdmin || isInstructor) && (
+            <Link to="/admin" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-primary">
+              Admin Panel
+            </Link>
+          )}
           <div className="flex gap-2 mt-4">
-            <Button variant="outline" size="sm" className="flex-1">Connexion</Button>
-            <Button size="sm" className="flex-1 bg-primary text-primary-foreground">S'inscrire</Button>
+            {user ? (
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => { signOut(); setMobileOpen(false); }}>
+                Déconnexion
+              </Button>
+            ) : (
+              <>
+                <Button asChild variant="outline" size="sm" className="flex-1">
+                  <Link to="/auth" onClick={() => setMobileOpen(false)}>Connexion</Link>
+                </Button>
+                <Button asChild size="sm" className="flex-1 bg-primary text-primary-foreground">
+                  <Link to="/auth" onClick={() => setMobileOpen(false)}>S'inscrire</Link>
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
