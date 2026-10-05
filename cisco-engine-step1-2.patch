@@ -1,0 +1,3007 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 562061d..c08d8ab 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -10,6 +10,8 @@ import CourseDetail from "./pages/CourseDetail";
+ import Dashboard from "./pages/Dashboard";
+ import LessonView from "./pages/LessonView";
+ import Labs from "./pages/Labs";
++import CiscoLabs from "./pages/CiscoLabs";
++import CiscoLabPlayer from "./pages/CiscoLabPlayer";
+ import CareerPaths from "./pages/CareerPaths";
+ import Auth from "./pages/Auth";
+ import AdminDashboard from "./pages/admin/AdminDashboard";
+@@ -36,6 +38,8 @@ const App = () => (
+             <Route path="/course/:courseId" element={<CourseDetail />} />
+             <Route path="/lesson/:lessonId" element={<LessonView />} />
+             <Route path="/labs" element={<Labs />} />
++            <Route path="/cisco-labs" element={<CiscoLabs />} />
++            <Route path="/cisco-labs/:labId" element={<CiscoLabPlayer />} />
+             <Route path="/career" element={<CareerPaths />} />
+             <Route path="/dashboard" element={<Dashboard />} />
+             <Route path="/auth" element={<Auth />} />
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+index 4741bb8..8661f37 100644
+--- a/src/components/Navbar.tsx
++++ b/src/components/Navbar.tsx
+@@ -13,6 +13,7 @@ const Navbar = () => {
+     { to: "/", label: "Accueil" },
+     { to: "/courses", label: "Cours" },
+     { to: "/labs", label: "Labs" },
++    { to: "/cisco-labs", label: "Labs Cisco" },
+     { to: "/career", label: "Carrière" },
+     { to: "/dashboard", label: "Tableau de bord" },
+   ];
+diff --git a/src/components/cisco/IosTerminal.tsx b/src/components/cisco/IosTerminal.tsx
+new file mode 100644
+index 0000000..94084de
+--- /dev/null
++++ b/src/components/cisco/IosTerminal.tsx
+@@ -0,0 +1,100 @@
++import { KeyboardEvent, useEffect, useRef, useState } from "react";
++
++export interface TermLine {
++  kind: "input" | "output" | "error";
++  text: string;
++}
++
++interface Props {
++  title: string;
++  prompt: string;
++  lines: TermLine[];
++  history: string[];
++  onSubmit: (line: string) => void;
++  /** Appelé quand l'utilisateur tape « ? » : reçoit la ligne en cours (sans le « ? »). */
++  onHelp: (line: string) => void;
++  /** Complétion Tab : renvoie la ligne complétée. */
++  onTab: (line: string) => string;
++}
++
++const IosTerminal = ({ title, prompt, lines, history, onSubmit, onHelp, onTab }: Props) => {
++  const [input, setInput] = useState("");
++  const [cursor, setCursor] = useState(-1);
++  const bottomRef = useRef<HTMLDivElement>(null);
++  const inputRef = useRef<HTMLInputElement>(null);
++
++  useEffect(() => {
++    bottomRef.current?.scrollIntoView({ block: "end" });
++  }, [lines]);
++
++  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
++    if (e.key === "Enter") {
++      onSubmit(input);
++      setInput("");
++      setCursor(-1);
++    } else if (e.key === "Tab") {
++      e.preventDefault();
++      setInput(onTab(input));
++    } else if (e.key === "?") {
++      e.preventDefault();
++      onHelp(input);
++    } else if (e.key === "ArrowUp") {
++      e.preventDefault();
++      const next = Math.min(cursor + 1, history.length - 1);
++      if (next >= 0) {
++        setCursor(next);
++        setInput(history[history.length - 1 - next]);
++      }
++    } else if (e.key === "ArrowDown") {
++      e.preventDefault();
++      const next = cursor - 1;
++      setCursor(next);
++      setInput(next >= 0 ? history[history.length - 1 - next] : "");
++    }
++  };
++
++  return (
++    <div className="rounded-lg bg-terminal terminal-glow overflow-hidden flex flex-col" onClick={() => inputRef.current?.focus()}>
++      <div className="flex items-center justify-between px-4 py-2 bg-[hsl(0,0%,16%)] border-b border-[hsl(0,0%,20%)]">
++        <span className="font-terminal text-xs text-[hsl(0,0%,60%)]">{title}</span>
++        <span className="font-terminal text-[11px] text-[hsl(0,0%,45%)]">Tab : compléter · ? : aide · ↑↓ : historique</span>
++      </div>
++      <div
++        role="log"
++        aria-live="polite"
++        aria-label={`Sortie du terminal ${title}`}
++        className="p-4 overflow-y-auto h-[320px] font-terminal text-[13px] leading-relaxed"
++      >
++        {lines.map((l, i) => (
++          <div
++            key={i}
++            className={`whitespace-pre-wrap break-words ${
++              l.kind === "input" ? "text-terminal-prompt" : l.kind === "error" ? "text-[hsl(0,75%,68%)]" : "text-terminal-fg"
++            }`}
++          >
++            {l.text}
++          </div>
++        ))}
++        <div ref={bottomRef} />
++      </div>
++      <div className="flex items-center px-4 py-2.5 border-t border-[hsl(0,0%,18%)] bg-[hsl(0,0%,10%)]">
++        <label htmlFor={`term-${title}`} className="text-terminal-prompt font-terminal text-[13px] mr-1 whitespace-pre">
++          {prompt}
++        </label>
++        <input
++          id={`term-${title}`}
++          ref={inputRef}
++          value={input}
++          onChange={(e) => setInput(e.target.value)}
++          onKeyDown={onKeyDown}
++          className="flex-1 bg-transparent text-terminal-fg font-terminal text-[13px] outline-none caret-terminal-prompt"
++          autoComplete="off"
++          autoCapitalize="off"
++          spellCheck={false}
++        />
++      </div>
++    </div>
++  );
++};
++
++export default IosTerminal;
+diff --git a/src/components/cisco/NetworkTopology.tsx b/src/components/cisco/NetworkTopology.tsx
+new file mode 100644
+index 0000000..9af79ef
+--- /dev/null
++++ b/src/components/cisco/NetworkTopology.tsx
+@@ -0,0 +1,103 @@
++import { Monitor, Network, Router } from "lucide-react";
++import { shortIfName } from "@/engine/interfaces";
++import { ifaceStatus } from "@/engine/network";
++import type { NetworkSimulator } from "@/engine/simulator";
++import type { DeviceType } from "@/engine/types";
++
++interface Props {
++  sim: NetworkSimulator;
++  /** Change à chaque commande pour recalculer l'état des liens. */
++  version: number;
++  activeId: string;
++  onSelect: (id: string) => void;
++}
++
++const W = 640;
++const H = 280;
++const ICON: Record<DeviceType, typeof Router> = { router: Router, switch: Network, pc: Monitor };
++const KIND_LABEL: Record<DeviceType, string> = { router: "Routeur", switch: "Switch", pc: "Poste" };
++
++const NetworkTopology = ({ sim, version, activeId, onSelect }: Props) => {
++  const { devices, links } = sim.net;
++  const pos = (id: string) => ({ x: (devices[id].x / 100) * (W - 120) + 60, y: (devices[id].y / 100) * (H - 100) + 44 });
++
++  return (
++    <svg
++      viewBox={`0 0 ${W} ${H}`}
++      role="group"
++      aria-label="Topologie du réseau"
++      className="w-full h-auto rounded-lg border bg-card"
++      data-version={version}
++    >
++      {links.map((l, i) => {
++        const a = pos(l.a.device);
++        const b = pos(l.b.device);
++        const sa = ifaceStatus(sim.net, l.a.device, l.a.iface);
++        const sb = ifaceStatus(sim.net, l.b.device, l.b.iface);
++        const up = sa.protocol === "up" && sb.protocol === "up";
++        const t = 0.26;
++        const label = (from: typeof a, to: typeof b, name: string) => ({
++          x: from.x + (to.x - from.x) * t,
++          y: from.y + (to.y - from.y) * t - 7,
++          name: shortIfName(name),
++        });
++        const la = label(a, b, l.a.iface);
++        const lb = label(b, a, l.b.iface);
++        return (
++          <g key={i}>
++            <line
++              x1={a.x}
++              y1={a.y}
++              x2={b.x}
++              y2={b.y}
++              stroke={up ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"}
++              strokeWidth={up ? 2.5 : 2}
++              strokeDasharray={up ? undefined : "5 5"}
++              opacity={up ? 1 : 0.7}
++            />
++            {[la, lb].map((p, k) => (
++              <text key={k} x={p.x} y={p.y} textAnchor="middle" className="fill-muted-foreground font-terminal" fontSize="10">
++                {p.name}
++              </text>
++            ))}
++            <title>{`${l.a.device} ${l.a.iface} ↔ ${l.b.device} ${l.b.iface} — ${up ? "actif" : "inactif"}`}</title>
++          </g>
++        );
++      })}
++
++      {Object.values(devices).map((d) => {
++        const { x, y } = pos(d.id);
++        const Icon = ICON[d.type];
++        const active = d.id === activeId;
++        return (
++          <g
++            key={d.id}
++            role="button"
++            tabIndex={0}
++            aria-label={`${KIND_LABEL[d.type]} ${d.hostname}${active ? " (sélectionné)" : ""}`}
++            onClick={() => onSelect(d.id)}
++            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(d.id)}
++            className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-[hsl(var(--ring))] [&:focus-visible>rect]:stroke-[3]"
++          >
++            <rect
++              x={x - 28}
++              y={y - 28}
++              width="56"
++              height="56"
++              rx="12"
++              className={active ? "fill-primary" : "fill-secondary"}
++              stroke={active ? "hsl(var(--primary))" : "hsl(var(--border))"}
++              strokeWidth="2"
++            />
++            <Icon x={x - 16} y={y - 16} width="32" height="32" className={active ? "text-primary-foreground" : "text-foreground"} strokeWidth={1.75} />
++            <text x={x} y={y + 46} textAnchor="middle" className="fill-foreground font-display" fontSize="13" fontWeight="600">
++              {d.hostname}
++            </text>
++          </g>
++        );
++      })}
++    </svg>
++  );
++};
++
++export default NetworkTopology;
+diff --git a/src/engine/checks.ts b/src/engine/checks.ts
+new file mode 100644
+index 0000000..5d6ae97
+--- /dev/null
++++ b/src/engine/checks.ts
+@@ -0,0 +1,123 @@
++// Objectifs vérifiables : on valide l'ÉTAT du réseau simulé, pas les touches tapées.
++import { z } from "zod";
++import { normalizeIfName } from "./interfaces";
++import { isUp, lookupRoute, ospfAdjacencies, routesOf } from "./network";
++import type { NetworkSimulator } from "./simulator";
++
++const device = z.string();
++
++export const CheckSchema = z.discriminatedUnion("type", [
++  z.object({ type: z.literal("running-config-contains"), device, lines: z.array(z.string()).min(1) }),
++  z.object({ type: z.literal("startup-config-contains"), device, lines: z.array(z.string()).min(1) }),
++  z.object({ type: z.literal("hostname-is"), device, hostname: z.string() }),
++  z.object({ type: z.literal("ping-succeeds"), from: device, to: z.string() }),
++  z.object({ type: z.literal("ping-fails"), from: device, to: z.string() }),
++  z.object({
++    type: z.literal("route-exists"),
++    device,
++    network: z.string(),
++    mask: z.string(),
++    protocol: z.enum(["connected", "static", "ospf"]).optional(),
++  }),
++  z.object({
++    type: z.literal("vlans-exist"),
++    device,
++    vlans: z.array(z.object({ id: z.number(), name: z.string().optional() })).min(1),
++  }),
++  z.object({
++    type: z.literal("interfaces-ip"),
++    device,
++    interfaces: z.array(z.object({ iface: z.string(), ip: z.string(), mask: z.string() })).min(1),
++  }),
++  z.object({ type: z.literal("interfaces-up"), device, interfaces: z.array(z.string()).min(1) }),
++  z.object({
++    type: z.literal("switchports"),
++    device,
++    ports: z
++      .array(
++        z.object({
++          iface: z.string(),
++          mode: z.enum(["access", "trunk"]),
++          accessVlan: z.number().optional(),
++          trunkAllows: z.array(z.number()).optional(),
++        }),
++      )
++      .min(1),
++  }),
++  z.object({ type: z.literal("ospf-neighbors"), device, count: z.number().min(1) }),
++]);
++
++export type Check = z.infer<typeof CheckSchema>;
++
++export interface CheckResult {
++  ok: boolean;
++  detail?: string;
++}
++
++const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
++
++export function evaluateCheck(sim: NetworkSimulator, c: Check): CheckResult {
++  const net = sim.net;
++  const dev = net.devices[(c as { device?: string }).device ?? (c as { from?: string }).from ?? ""];
++  switch (c.type) {
++    case "running-config-contains": {
++      const have = new Set(sim.runningConfigLines(c.device).map(norm));
++      const missing = c.lines.filter((l) => !have.has(norm(l)));
++      return { ok: !missing.length, detail: missing.length ? `Manquant : ${missing.join(", ")}` : undefined };
++    }
++    case "startup-config-contains": {
++      const saved = (dev.startupConfig ?? "").split("\n").map(norm);
++      const missing = c.lines.filter((l) => !saved.includes(norm(l)));
++      return { ok: !missing.length, detail: missing.length ? "Configuration non enregistrée" : undefined };
++    }
++    case "hostname-is":
++      return { ok: dev.hostname === c.hostname };
++    case "ping-succeeds":
++      return { ok: sim.ping(c.from, c.to) };
++    case "ping-fails":
++      return { ok: !sim.ping(c.from, c.to) };
++    case "route-exists": {
++      const r = routesOf(net, c.device).find(
++        (x) => x.network === c.network && x.mask === c.mask && (!c.protocol || x.protocol === c.protocol),
++      );
++      return { ok: !!r };
++    }
++    case "vlans-exist": {
++      const bad = c.vlans.filter((v) => {
++        const have = dev.vlans[v.id];
++        return !have || (v.name !== undefined && have.name !== v.name);
++      });
++      return { ok: !bad.length, detail: bad.length ? `VLAN manquant ou mal nommé : ${bad.map((b) => b.id).join(", ")}` : undefined };
++    }
++    case "interfaces-ip": {
++      const bad = c.interfaces.filter((x) => {
++        const n = normalizeIfName(x.iface);
++        const i = n ? dev.interfaces[n] : undefined;
++        return !i || i.ip !== x.ip || i.mask !== x.mask || !isUp(net, c.device, n!);
++      });
++      return { ok: !bad.length, detail: bad.length ? `À corriger : ${bad.map((b) => b.iface).join(", ")}` : undefined };
++    }
++    case "interfaces-up": {
++      const bad = c.interfaces.filter((x) => {
++        const n = normalizeIfName(x);
++        return !n || !dev.interfaces[n] || !isUp(net, c.device, n);
++      });
++      return { ok: !bad.length };
++    }
++    case "switchports": {
++      const bad = c.ports.filter((p) => {
++        const n = normalizeIfName(p.iface);
++        const i = n ? dev.interfaces[n] : undefined;
++        if (!i || i.switchportMode !== p.mode) return true;
++        if (p.accessVlan !== undefined && i.accessVlan !== p.accessVlan) return true;
++        if (p.trunkAllows && !p.trunkAllows.every((v) => i.trunkAllowed === "all" || i.trunkAllowed.includes(v))) return true;
++        return false;
++      });
++      return { ok: !bad.length, detail: bad.length ? `À corriger : ${bad.map((b) => b.iface).join(", ")}` : undefined };
++    }
++    case "ospf-neighbors":
++      return { ok: ospfAdjacencies(net, c.device).length >= c.count };
++  }
++}
++
++export { lookupRoute };
+diff --git a/src/engine/config.ts b/src/engine/config.ts
+new file mode 100644
+index 0000000..26396b3
+--- /dev/null
++++ b/src/engine/config.ts
+@@ -0,0 +1,157 @@
++// Génération de la configuration (running-config) et des sorties « show ».
++import { compressVlans, shortIfName } from "./interfaces";
++import { ifaceStatus, ospfAdjacencies, routesOf, routerIdOf } from "./network";
++import type { DeviceState, NetState } from "./types";
++import { maskToPrefix } from "./ip";
++import { ipToInt } from "./ip";
++
++export function runningConfigLines(dev: DeviceState): string[] {
++  const L: string[] = ["version 15.2", "!", `hostname ${dev.hostname}`, "!"];
++  if (dev.type === "switch") {
++    for (const v of Object.values(dev.vlans).filter((v) => v.id !== 1)) {
++      L.push(`vlan ${v.id}`, ` name ${v.name}`, "!");
++    }
++  }
++  for (const i of Object.values(dev.interfaces)) {
++    L.push(`interface ${i.name}`);
++    if (i.description) L.push(` description ${i.description}`);
++    if (dev.type === "switch" && i.kind === "physical") {
++      if (i.modeExplicit || i.switchportMode === "trunk") L.push(` switchport mode ${i.switchportMode}`);
++      if (i.accessVlan !== 1) L.push(` switchport access vlan ${i.accessVlan}`);
++      if (i.trunkAllowed !== "all") L.push(` switchport trunk allowed vlan ${compressVlans(i.trunkAllowed)}`);
++    } else if (i.ip && i.mask) {
++      L.push(` ip address ${i.ip} ${i.mask}`);
++    } else {
++      L.push(" no ip address");
++    }
++    if (i.ospfCost !== undefined) L.push(` ip ospf cost ${i.ospfCost}`);
++    if (i.shutdown) L.push(" shutdown");
++    L.push("!");
++  }
++  if (dev.ospf) {
++    L.push(`router ospf ${dev.ospf.pid}`);
++    if (dev.ospf.routerId) L.push(` router-id ${dev.ospf.routerId}`);
++    for (const n of dev.ospf.networks) L.push(` network ${n.network} ${n.wildcard} area ${n.area}`);
++    L.push("!");
++  }
++  for (const r of dev.staticRoutes) L.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
++  if (dev.defaultGateway) L.push(`ip default-gateway ${dev.defaultGateway}`);
++  if (dev.staticRoutes.length || dev.defaultGateway) L.push("!");
++  L.push("end");
++  return L;
++}
++
++export function runningConfig(dev: DeviceState): string {
++  const body = runningConfigLines(dev).join("\n");
++  return `Building configuration...\n\nCurrent configuration : ${body.length} bytes\n!\n${body}`;
++}
++
++export function showIpInterfaceBrief(net: NetState, dev: DeviceState): string {
++  const head =
++    "Interface".padEnd(23) + "IP-Address".padEnd(16) + "OK? " + "Method ".padEnd(7 + 1) + "Status".padEnd(22) + "Protocol";
++  const rows = Object.values(dev.interfaces).map((i) => {
++    const st = ifaceStatus(net, dev.id, i.name);
++    return (
++      i.name.padEnd(23) +
++      (i.ip ?? "unassigned").padEnd(16) +
++      "YES " +
++      (i.ip ? "manual" : "unset").padEnd(7) +
++      " " +
++      st.status.padEnd(22) +
++      st.protocol
++    );
++  });
++  return [head, ...rows].join("\n");
++}
++
++export function showVlanBrief(dev: DeviceState): string {
++  const head = "VLAN " + "Name".padEnd(33) + "Status".padEnd(10) + "Ports";
++  const sep = `---- ${"-".repeat(32)} ${"-".repeat(9)} ${"-".repeat(31)}`;
++  const ids = Object.keys(dev.vlans).map(Number).sort((a, b) => a - b);
++  const out = [head, sep];
++  for (const id of ids) {
++    const ports = Object.values(dev.interfaces)
++      .filter((i) => i.kind === "physical" && i.switchportMode === "access" && i.accessVlan === id)
++      .map((i) => shortIfName(i.name));
++    const lines: string[] = [];
++    let cur = "";
++    for (const p of ports) {
++      const next = cur ? `${cur}, ${p}` : p;
++      if (next.length > 31 && cur) {
++        lines.push(`${cur},`);
++        cur = p;
++      } else cur = next;
++    }
++    lines.push(cur);
++    out.push(`${String(id).padEnd(5)}${dev.vlans[id].name.padEnd(33)}${"active".padEnd(10)}${lines[0]}`);
++    for (const l of lines.slice(1)) out.push(" ".repeat(48) + l);
++  }
++  out.push(
++    "1002 fddi-default                     act/unsup",
++    "1003 token-ring-default               act/unsup",
++    "1004 fddinet-default                  act/unsup",
++    "1005 trnet-default                    act/unsup",
++  );
++  return out.join("\n");
++}
++
++export function showInterfacesTrunk(net: NetState, dev: DeviceState): string {
++  const trunks = Object.values(dev.interfaces).filter((i) => i.kind === "physical" && i.switchportMode === "trunk");
++  if (!trunks.length) return "";
++  const a = ["Port".padEnd(12) + "Mode".padEnd(13) + "Encapsulation".padEnd(15) + "Status".padEnd(14) + "Native vlan"];
++  const b = ["Port".padEnd(12) + "Vlans allowed on trunk"];
++  for (const t of trunks) {
++    const up = ifaceStatus(net, dev.id, t.name).protocol === "up";
++    a.push(shortIfName(t.name).padEnd(12) + "on".padEnd(13) + "802.1q".padEnd(15) + (up ? "trunking" : "not-trunking").padEnd(14) + "1");
++    b.push(shortIfName(t.name).padEnd(12) + (t.trunkAllowed === "all" ? "1-4094" : compressVlans(t.trunkAllowed)));
++  }
++  return `${a.join("\n")}\n\n${b.join("\n")}`;
++}
++
++export function showIpRoute(net: NetState, dev: DeviceState): string {
++  const routes = routesOf(net, dev.id).sort((x, y) => ipToInt(x.network) - ipToInt(y.network) || x.prefix - y.prefix);
++  const def = routes.find((r) => r.prefix === 0 && r.nextHop);
++  const L = [
++    "Codes: C - connected, S - static, O - OSPF, * - candidate default",
++    "",
++    def ? `Gateway of last resort is ${def.nextHop} to network 0.0.0.0` : "Gateway of last resort is not set",
++    "",
++  ];
++  for (const r of routes) {
++    const net_ = `${r.network}/${maskToPrefix(r.mask)}`;
++    if (r.protocol === "connected") L.push(`C        ${net_} is directly connected, ${r.iface}`);
++    else if (r.protocol === "static")
++      L.push(`S${r.prefix === 0 ? "*" : " "}       ${net_} [1/0] via ${r.nextHop}`);
++    else L.push(`O        ${net_} [110/${r.metric}] via ${r.nextHop}, 00:00:30, ${r.iface}`);
++  }
++  return L.join("\n");
++}
++
++export function showOspfNeighbor(net: NetState, dev: DeviceState): string {
++  const adj = ospfAdjacencies(net, dev.id);
++  if (!adj.length) return "";
++  const head =
++    "Neighbor ID".padEnd(16) + "Pri".padEnd(6) + "State".padEnd(16) + "Dead Time".padEnd(12) + "Address".padEnd(16) + "Interface";
++  const rows = adj.map(
++    (a) =>
++      a.neighborId.padEnd(16) +
++      "1".padStart(3).padEnd(6) +
++      (a.neighborIsDr ? "FULL/DR" : "FULL/BDR").padEnd(16) +
++      "00:00:34".padEnd(12) +
++      a.neighborIp.padEnd(16) +
++      a.iface,
++  );
++  return [head, ...rows].join("\n");
++}
++
++export function showInterface(net: NetState, dev: DeviceState, name: string): string {
++  const i = dev.interfaces[name];
++  const st = ifaceStatus(net, dev.id, name);
++  const L = [`${name} is ${st.status}, line protocol is ${st.protocol}`];
++  if (i.description) L.push(`  Description: ${i.description}`);
++  if (i.ip && i.mask) L.push(`  Internet address is ${i.ip}/${maskToPrefix(i.mask)}`);
++  L.push("  MTU 1500 bytes");
++  return L.join("\n");
++}
++
++export { routerIdOf };
+diff --git a/src/engine/engine.test.ts b/src/engine/engine.test.ts
+new file mode 100644
+index 0000000..bcac79e
+--- /dev/null
++++ b/src/engine/engine.test.ts
+@@ -0,0 +1,229 @@
++import { describe, expect, it } from "vitest";
++import { evaluateCheck } from "./checks";
++import { NetworkSimulator } from "./simulator";
++import { ciscoLabs } from "@/labs";
++import type { Lab } from "@/labs";
++
++function load(lab: Lab) {
++  return new NetworkSimulator(lab.topology, lab.initialConfigs);
++}
++
++/** Applique la solution : mode config pour routeurs/switchs, mode PC pour les postes. */
++function applySolution(sim: NetworkSimulator, lab: Lab) {
++  for (const [id, lines] of Object.entries(lab.solution)) {
++    sim.execute(id, "enable");
++    sim.execute(id, "configure terminal");
++    for (const l of lines) sim.execute(id, l);
++  }
++}
++
++const results = (sim: NetworkSimulator, lab: Lab) =>
++  lab.objectives.map((o) => ({ id: o.id, ...evaluateCheck(sim, o.check) }));
++
++describe("labs Cisco", () => {
++  it("charge au moins 3 labs valides", () => {
++    expect(ciscoLabs.length).toBeGreaterThanOrEqual(3);
++  });
++
++  for (const lab of ciscoLabs) {
++    describe(lab.title, () => {
++      it("démarre avec des objectifs non atteints", () => {
++        const sim = load(lab);
++        const done = results(sim, lab).filter((r) => r.ok);
++        expect(done.map((d) => d.id)).toEqual([]);
++      });
++
++      it("est entièrement validé par la solution de référence", () => {
++        const sim = load(lab);
++        applySolution(sim, lab);
++        const failing = results(sim, lab).filter((r) => !r.ok);
++        expect(failing).toEqual([]);
++      });
++    });
++  }
++});
++
++describe("analyse des commandes IOS", () => {
++  const lab = ciscoLabs.find((l) => l.id === "cisco-interface-basics")!;
++  const mk = () => load(lab);
++
++  it("gère les modes et les prompts", () => {
++    const sim = mk();
++    expect(sim.getPrompt("R1")).toBe("Router>");
++    sim.execute("R1", "en");
++    expect(sim.getPrompt("R1")).toBe("Router#");
++    sim.execute("R1", "conf t");
++    expect(sim.getPrompt("R1")).toBe("Router(config)#");
++    sim.execute("R1", "int g0/0");
++    expect(sim.getPrompt("R1")).toBe("Router(config-if)#");
++    sim.execute("R1", "exit");
++    expect(sim.getPrompt("R1")).toBe("Router(config)#");
++    sim.execute("R1", "hostname Edge");
++    expect(sim.getPrompt("R1")).toBe("Edge(config)#");
++    sim.execute("R1", "end");
++    expect(sim.getPrompt("R1")).toBe("Edge#");
++  });
++
++  it("accepte les abréviations et signale les erreurs comme IOS", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    expect(sim.execute("R1", "sh ip int br").output).toContain("GigabitEthernet0/0");
++    expect(sim.execute("R1", "show ip").output).toBe("% Incomplete command.");
++    expect(sim.execute("R1", "co").output).toBe('% Ambiguous command:  "co"');
++    const bad = sim.execute("R1", "show iq route").output;
++    expect(bad).toContain("% Invalid input detected at '^' marker.");
++    // le marqueur ^ est aligné sous « iq » (prompt « Router# » = 7 car. + « show » + espace)
++    expect(bad.split("\n")[0]).toBe(`${" ".repeat(7 + 5)}^`);
++  });
++
++  it("rejette une adresse ou un masque invalide", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    sim.execute("R1", "conf t");
++    sim.execute("R1", "int g0/0");
++    expect(sim.execute("R1", "ip address 10.0.0.300 255.255.255.0").output).toContain("Invalid input");
++    expect(sim.execute("R1", "ip address 10.0.0.1 255.0.255.0").output).toContain("Invalid input");
++  });
++
++  it("revient en mode global quand on tape une commande globale depuis une interface", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    sim.execute("R1", "conf t");
++    sim.execute("R1", "int g0/0");
++    sim.execute("R1", "hostname X1");
++    expect(sim.getPrompt("R1")).toBe("X1(config)#");
++  });
++
++  it("supporte « do » depuis le mode configuration", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    sim.execute("R1", "conf t");
++    expect(sim.execute("R1", "do show ip interface brief").output).toContain("administratively down");
++    expect(sim.getPrompt("R1")).toBe("Router(config)#");
++  });
++
++  it("propose l'aide « ? » et la complétion Tab", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    expect(sim.help("R1", "show ")).toContain("running-config");
++    expect(sim.help("R1", "sh")).toContain("show");
++    expect(sim.complete("R1", "conf")).toBe("configure ");
++    expect(sim.complete("R1", "co")).toBe("co"); // ambigu : pas de complétion
++  });
++
++  it("n'autorise pas les commandes privilégiées en mode utilisateur", () => {
++    const sim = mk();
++    expect(sim.execute("R1", "show running-config").output).toContain("%");
++  });
++
++  it("signale un chevauchement d'adresses", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    sim.execute("R1", "conf t");
++    sim.execute("R1", "int g0/0");
++    sim.execute("R1", "ip address 10.0.0.1 255.255.255.0");
++    sim.execute("R1", "int g0/1");
++    expect(sim.execute("R1", "ip address 10.0.0.9 255.255.255.0").output).toContain("overlaps with GigabitEthernet0/0");
++  });
++
++  it("affiche des messages de changement d'état à l'activation", () => {
++    const sim = mk();
++    sim.execute("R1", "enable");
++    sim.execute("R1", "conf t");
++    sim.execute("R1", "int g0/0");
++    const out = sim.execute("R1", "no shutdown").output;
++    expect(out).toContain("changed state to up");
++  });
++
++  it("restaure l'état initial", () => {
++    const sim = mk();
++    const snap = sim.snapshot();
++    sim.execute("R1", "enable");
++    sim.execute("R1", "conf t");
++    sim.execute("R1", "hostname Autre");
++    sim.restore(snap);
++    expect(sim.getPrompt("R1")).toBe("Router>");
++  });
++});
++
++describe("connectivité", () => {
++  it("exige un chemin retour : sans route sur R2, le ping de PC1 échoue", () => {
++    const lab = ciscoLabs.find((l) => l.id === "cisco-static-routing")!;
++    const sim = load(lab);
++    applySolution(sim, lab);
++    expect(sim.ping("PC1", "192.168.2.10")).toBe(true);
++    // on retire la route retour sur R2
++    sim.execute("R2", "no ip route 192.168.1.0 255.255.255.0 10.0.0.1");
++    expect(sim.ping("PC1", "192.168.2.10")).toBe(false);
++  });
++
++  it("une route vers un prochain saut injoignable n'est pas installée", () => {
++    const lab = ciscoLabs.find((l) => l.id === "cisco-static-routing")!;
++    const sim = load(lab);
++    for (const l of ["enable", "conf t", "ip route 192.168.2.0 255.255.255.0 10.0.0.2", "end"]) sim.execute("R1", l);
++    expect(sim.execute("R1", "show ip route").output).not.toContain("192.168.2.0");
++  });
++
++  it("un port trunk qui n'autorise pas le VLAN coupe la communication", () => {
++    const lab = ciscoLabs.find((l) => l.id === "cisco-vlan-trunk")!;
++    const sim = load(lab);
++    applySolution(sim, lab);
++    expect(sim.ping("PC1", "192.168.1.2")).toBe(true);
++    sim.execute("SW1", "interface FastEthernet0/24");
++    sim.execute("SW1", "switchport trunk allowed vlan 20");
++    expect(sim.ping("PC1", "192.168.1.2")).toBe(false);
++    expect(sim.ping("PC3", "192.168.1.4")).toBe(true);
++  });
++
++  it("OSPF : deux routeurs deviennent voisins et apprennent les réseaux", () => {
++    const sim = new NetworkSimulator(
++      {
++        devices: [
++          { id: "R1", type: "router" },
++          { id: "R2", type: "router" },
++          { id: "R3", type: "router" },
++          { id: "PC1", type: "pc" },
++          { id: "PC2", type: "pc" },
++        ],
++        links: [
++          { a: "PC1:Fa0", b: "R1:Gi0/0" },
++          { a: "R1:Gi0/1", b: "R2:Gi0/0" },
++          { a: "R2:Gi0/1", b: "R3:Gi0/0" },
++          { a: "R3:Gi0/1", b: "PC2:Fa0" },
++        ],
++      },
++      {
++        PC1: ["ip address 10.1.1.10 255.255.255.0 10.1.1.1"],
++        PC2: ["ip address 10.3.3.10 255.255.255.0 10.3.3.1"],
++        R1: [
++          "interface Gi0/0", "ip address 10.1.1.1 255.255.255.0", "no shutdown",
++          "interface Gi0/1", "ip address 10.12.0.1 255.255.255.252", "no shutdown", "exit",
++          "router ospf 1", "network 10.0.0.0 0.255.255.255 area 0",
++        ],
++        R2: [
++          "interface Gi0/0", "ip address 10.12.0.2 255.255.255.252", "no shutdown",
++          "interface Gi0/1", "ip address 10.23.0.1 255.255.255.252", "no shutdown", "exit",
++          "router ospf 1", "network 10.0.0.0 0.255.255.255 area 0",
++        ],
++        R3: [
++          "interface Gi0/0", "ip address 10.23.0.2 255.255.255.252", "no shutdown",
++          "interface Gi0/1", "ip address 10.3.3.1 255.255.255.0", "no shutdown", "exit",
++          "router ospf 1", "network 10.0.0.0 0.255.255.255 area 0",
++        ],
++      },
++    );
++    expect(sim.ping("PC1", "10.3.3.10")).toBe(true);
++    sim.execute("R2", "enable");
++    const nb = sim.execute("R2", "show ip ospf neighbor").output;
++    expect(nb).toContain("FULL");
++    expect(nb.split("\n").length).toBe(3); // en-tête + 2 voisins
++    sim.execute("R1", "enable");
++    const rt = sim.execute("R1", "show ip route").output;
++    expect(rt).toMatch(/O\s+10\.3\.3\.0\/24 \[110\/3\] via 10\.12\.0\.2/);
++    // un wildcard différent coupe l'adjacence
++    sim.execute("R2", "conf t");
++    sim.execute("R2", "router ospf 1");
++    sim.execute("R2", "no network 10.0.0.0 0.255.255.255 area 0");
++    expect(sim.ping("PC1", "10.3.3.10")).toBe(false);
++  });
++});
+diff --git a/src/engine/interfaces.ts b/src/engine/interfaces.ts
+new file mode 100644
+index 0000000..ed89dd0
+--- /dev/null
++++ b/src/engine/interfaces.ts
+@@ -0,0 +1,73 @@
++import type { DeviceType, InterfaceState } from "./types";
++
++const FULL_NAMES = ["GigabitEthernet", "FastEthernet", "Ethernet", "Loopback", "Vlan"];
++
++/** "gi0/0", "g0/0", "GigabitEthernet0/0" → "GigabitEthernet0/0". null si la syntaxe est invalide. */
++export function normalizeIfName(raw: string): string | null {
++  const m = /^([a-zA-Z]+)\s*(\d+(?:\/\d+)*)$/.exec(raw.trim());
++  if (!m) return null;
++  const word = m[1].toLowerCase();
++  const full = FULL_NAMES.find((n) => n.toLowerCase().startsWith(word));
++  return full ? `${full}${m[2]}` : null;
++}
++
++export function shortIfName(name: string): string {
++  return name
++    .replace("GigabitEthernet", "Gi")
++    .replace("FastEthernet", "Fa")
++    .replace("Ethernet", "Et")
++    .replace("Loopback", "Lo")
++    .replace("Vlan", "Vl");
++}
++
++export function ifaceKind(name: string): InterfaceState["kind"] {
++  if (name.startsWith("Loopback")) return "loopback";
++  if (name.startsWith("Vlan")) return "svi";
++  return "physical";
++}
++
++export function makeInterface(name: string, type: DeviceType): InterfaceState {
++  const kind = ifaceKind(name);
++  return {
++    name,
++    kind,
++    // Les interfaces de routeur sont désactivées par défaut ; Vlan1 aussi sur un switch.
++    shutdown: kind === "physical" ? type === "router" : name === "Vlan1",
++    switchportMode: "access",
++    accessVlan: 1,
++    trunkAllowed: "all",
++  };
++}
++
++export function defaultInterfaceNames(type: DeviceType): string[] {
++  if (type === "router") return ["GigabitEthernet0/0", "GigabitEthernet0/1", "GigabitEthernet0/2"];
++  if (type === "pc") return ["FastEthernet0"];
++  const fa = Array.from({ length: 24 }, (_, i) => `FastEthernet0/${i + 1}`);
++  return [...fa, "GigabitEthernet0/1", "GigabitEthernet0/2"];
++}
++
++export function compressVlans(nums: number[]): string {
++  const s = [...new Set(nums)].sort((a, b) => a - b);
++  const out: string[] = [];
++  for (let i = 0; i < s.length; ) {
++    let j = i;
++    while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
++    out.push(j > i ? `${s[i]}-${s[j]}` : `${s[i]}`);
++    i = j + 1;
++  }
++  return out.join(",");
++}
++
++/** "10,20,30-32" → [10,20,30,31,32]. null si invalide. */
++export function parseVlanList(text: string): number[] | null {
++  const out: number[] = [];
++  for (const part of text.split(",")) {
++    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
++    if (!m) return null;
++    const a = Number(m[1]);
++    const b = m[2] ? Number(m[2]) : a;
++    if (a < 1 || b > 4094 || b < a) return null;
++    for (let v = a; v <= b; v++) out.push(v);
++  }
++  return out;
++}
+diff --git a/src/engine/ip.ts b/src/engine/ip.ts
+new file mode 100644
+index 0000000..0772691
+--- /dev/null
++++ b/src/engine/ip.ts
+@@ -0,0 +1,53 @@
++// Utilitaires IPv4 purs (aucune dépendance UI)
++
++export function isValidIp(s: string): boolean {
++  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
++  return !!m && m.slice(1).every((o) => Number(o) <= 255);
++}
++
++export function ipToInt(ip: string): number {
++  return ip.split(".").reduce((acc, o) => acc * 256 + Number(o), 0);
++}
++
++export function intToIp(n: number): string {
++  return [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join(".");
++}
++
++/** Masque de sous-réseau valide : uns contigus puis zéros. */
++export function isValidMask(m: string): boolean {
++  if (!isValidIp(m)) return false;
++  const inv = ~ipToInt(m) >>> 0;
++  return (inv & (inv + 1)) === 0;
++}
++
++/** Wildcard valide (inverse d'un masque) : zéros contigus puis uns. */
++export function isValidWildcard(w: string): boolean {
++  if (!isValidIp(w)) return false;
++  const n = ipToInt(w);
++  return (n & (n + 1)) === 0;
++}
++
++export function maskToPrefix(mask: string): number {
++  return ipToInt(mask).toString(2).split("1").length - 1;
++}
++
++export function prefixToMask(prefix: number): string {
++  if (prefix <= 0) return "0.0.0.0";
++  return intToIp((0xffffffff << (32 - prefix)) >>> 0);
++}
++
++export function networkOf(ip: string, mask: string): string {
++  return intToIp((ipToInt(ip) & ipToInt(mask)) >>> 0);
++}
++
++export function inSubnet(ip: string, network: string, mask: string): boolean {
++  return networkOf(ip, mask) === network;
++}
++
++export function matchesWildcard(ip: string, network: string, wildcard: string): boolean {
++  return (((ipToInt(ip) ^ ipToInt(network)) & ~ipToInt(wildcard)) >>> 0) === 0;
++}
++
++export function wildcardToMask(w: string): string {
++  return intToIp((~ipToInt(w)) >>> 0);
++}
+diff --git a/src/engine/network.ts b/src/engine/network.ts
+new file mode 100644
+index 0000000..12ae316
+--- /dev/null
++++ b/src/engine/network.ts
+@@ -0,0 +1,396 @@
++// Modèle réseau : état des liens, domaines de diffusion (L2), routage (connecté / statique / OSPF) et ping.
++import { inSubnet, ipToInt, matchesWildcard, maskToPrefix, networkOf } from "./ip";
++import { normalizeIfName } from "./interfaces";
++import type { DeviceState, Endpoint, InterfaceState, NetState } from "./types";
++
++export function parseEndpoint(raw: string): Endpoint {
++  const [device, port] = raw.split(":");
++  const iface = normalizeIfName(port ?? "");
++  if (!device || !iface) throw new Error(`Extrémité de lien invalide : "${raw}" (format attendu : R1:Gi0/0)`);
++  return { device, iface };
++}
++
++export function peerOf(net: NetState, ep: Endpoint): Endpoint | undefined {
++  for (const l of net.links) {
++    if (l.a.device === ep.device && l.a.iface === ep.iface) return l.b;
++    if (l.b.device === ep.device && l.b.iface === ep.iface) return l.a;
++  }
++  return undefined;
++}
++
++export function allowsVlan(i: InterfaceState, vlan: number): boolean {
++  return i.trunkAllowed === "all" || i.trunkAllowed.includes(vlan);
++}
++
++function physicalLinkUp(net: NetState, device: string, iface: string): boolean {
++  const me = net.devices[device]?.interfaces[iface];
++  if (!me || me.shutdown) return false;
++  const peer = peerOf(net, { device, iface });
++  if (!peer) return false;
++  const p = net.devices[peer.device]?.interfaces[peer.iface];
++  return !!p && !p.shutdown;
++}
++
++function sviActive(net: NetState, device: string, vlan: number): boolean {
++  const dev = net.devices[device];
++  if (!dev.vlans[vlan]) return false;
++  return Object.values(dev.interfaces).some(
++    (i) =>
++      i.kind === "physical" &&
++      physicalLinkUp(net, device, i.name) &&
++      (i.switchportMode === "access" ? i.accessVlan === vlan : allowsVlan(i, vlan)),
++  );
++}
++
++export function ifaceStatus(
++  net: NetState,
++  device: string,
++  iface: string,
++): { status: "up" | "down" | "administratively down"; protocol: "up" | "down" } {
++  const i = net.devices[device].interfaces[iface];
++  if (i.shutdown) return { status: "administratively down", protocol: "down" };
++  if (i.kind === "loopback") return { status: "up", protocol: "up" };
++  if (i.kind === "svi") {
++    const up = sviActive(net, device, Number(iface.replace("Vlan", "")));
++    return { status: up ? "up" : "down", protocol: up ? "up" : "down" };
++  }
++  const up = physicalLinkUp(net, device, iface);
++  return { status: up ? "up" : "down", protocol: up ? "up" : "down" };
++}
++
++export function isUp(net: NetState, device: string, iface: string): boolean {
++  const s = ifaceStatus(net, device, iface);
++  return s.status === "up" && s.protocol === "up";
++}
++
++/** Points de terminaison L3 atteignables en couche 2 depuis une interface (hors elle-même). */
++export function l2Domain(net: NetState, start: Endpoint): Endpoint[] {
++  const result: Endpoint[] = [];
++  const seen = new Set<string>();
++  const startDev = net.devices[start.device];
++  const startIface = startDev.interfaces[start.iface];
++
++  type Frame = { device: string; vlan: number };
++  const queue: Frame[] = [];
++
++  const deliver = (to: Endpoint, tagged: number | null) => {
++    const dev = net.devices[to.device];
++    const i = dev.interfaces[to.iface];
++    if (!i || !physicalLinkUp(net, to.device, to.iface)) return;
++    if (dev.type !== "switch") {
++      if (tagged === null && !(to.device === start.device && to.iface === start.iface)) result.push(to);
++      return;
++    }
++    let vlan: number;
++    if (i.switchportMode === "access") {
++      if (tagged !== null && tagged !== i.accessVlan) return;
++      vlan = i.accessVlan;
++    } else {
++      vlan = tagged ?? 1;
++      if (!allowsVlan(i, vlan)) return;
++    }
++    const key = `${to.device}|${vlan}`;
++    if (seen.has(key)) return;
++    seen.add(key);
++    queue.push({ device: to.device, vlan });
++  };
++
++  if (startDev.type === "switch" && startIface.kind === "svi") {
++    const vlan = Number(start.iface.replace("Vlan", ""));
++    seen.add(`${start.device}|${vlan}`);
++    queue.push({ device: start.device, vlan });
++  } else {
++    const peer = peerOf(net, start);
++    if (peer) deliver(peer, null);
++  }
++
++  while (queue.length) {
++    const { device, vlan } = queue.shift()!;
++    const sw = net.devices[device];
++    const svi = sw.interfaces[`Vlan${vlan}`];
++    if (svi && svi.ip && isUp(net, device, svi.name) && !(device === start.device && svi.name === start.iface)) {
++      result.push({ device, iface: svi.name });
++    }
++    for (const p of Object.values(sw.interfaces)) {
++      if (p.kind !== "physical" || !physicalLinkUp(net, device, p.name)) continue;
++      const peer = peerOf(net, { device, iface: p.name })!;
++      if (p.switchportMode === "access") {
++        if (p.accessVlan === vlan) deliver(peer, null);
++      } else if (allowsVlan(p, vlan)) {
++        deliver(peer, vlan === 1 ? null : vlan);
++      }
++    }
++  }
++  return result;
++}
++
++// ───────────────────────────── Routage ─────────────────────────────
++
++export interface Route {
++  network: string;
++  mask: string;
++  prefix: number;
++  protocol: "connected" | "static" | "ospf";
++  ad: number;
++  metric: number;
++  nextHop?: string;
++  iface?: string;
++}
++
++export function routerIdOf(net: NetState, dev: DeviceState): string {
++  if (dev.ospf?.routerId) return dev.ospf.routerId;
++  const ips = (kind: InterfaceState["kind"] | "any") =>
++    Object.values(dev.interfaces)
++      .filter((i) => i.ip && (kind === "any" || i.kind === kind) && isUp(net, dev.id, i.name))
++      .map((i) => i.ip!)
++      .sort((a, b) => ipToInt(b) - ipToInt(a));
++  return ips("loopback")[0] ?? ips("any")[0] ?? "0.0.0.0";
++}
++
++interface OspfIf {
++  device: string;
++  iface: string;
++  ip: string;
++  mask: string;
++  subnet: string;
++  area: string;
++  cost: number;
++  loopback: boolean;
++}
++
++export interface OspfAdjacency {
++  device: string;
++  iface: string;
++  ip: string;
++  neighborDevice: string;
++  neighborIface: string;
++  neighborIp: string;
++  neighborId: string;
++  neighborIsDr: boolean;
++}
++
++interface OspfModel {
++  version: number;
++  adjacencies: OspfAdjacency[];
++  routes: Record<string, Route[]>;
++}
++
++const ospfCache = new WeakMap<NetState, OspfModel>();
++
++function computeOspf(net: NetState): OspfModel {
++  const ifs: OspfIf[] = [];
++  for (const dev of Object.values(net.devices)) {
++    if (dev.type !== "router" || !dev.ospf) continue;
++    for (const i of Object.values(dev.interfaces)) {
++      if (!i.ip || !i.mask || !isUp(net, dev.id, i.name)) continue;
++      const n = dev.ospf.networks.find((o) => matchesWildcard(i.ip!, o.network, o.wildcard));
++      if (!n) continue;
++      const loopback = i.kind === "loopback";
++      ifs.push({
++        device: dev.id,
++        iface: i.name,
++        ip: i.ip,
++        mask: loopback ? "255.255.255.255" : i.mask,
++        subnet: loopback ? i.ip : networkOf(i.ip, i.mask),
++        area: n.area,
++        cost: i.ospfCost ?? 1,
++        loopback,
++      });
++    }
++  }
++
++  const adjacencies: OspfAdjacency[] = [];
++  for (const a of ifs) {
++    if (a.loopback) continue;
++    for (const ep of l2Domain(net, { device: a.device, iface: a.iface })) {
++      const b = ifs.find((x) => x.device === ep.device && x.iface === ep.iface);
++      if (!b || b.device === a.device || b.loopback) continue;
++      if (b.subnet !== a.subnet || b.mask !== a.mask || b.area !== a.area) continue;
++      const idA = routerIdOf(net, net.devices[a.device]);
++      const idB = routerIdOf(net, net.devices[b.device]);
++      adjacencies.push({
++        device: a.device,
++        iface: a.iface,
++        ip: a.ip,
++        neighborDevice: b.device,
++        neighborIface: b.iface,
++        neighborIp: b.ip,
++        neighborId: idB,
++        neighborIsDr: ipToInt(idB) > ipToInt(idA),
++      });
++    }
++  }
++
++  const routes: Record<string, Route[]> = {};
++  const routers = [...new Set(ifs.map((i) => i.device))];
++  for (const r of routers) {
++    const dist: Record<string, number> = { [r]: 0 };
++    const first: Record<string, { iface: string; nextHop: string }> = {};
++    const done = new Set<string>();
++    while (true) {
++      const cur = Object.keys(dist)
++        .filter((d) => !done.has(d))
++        .sort((x, y) => dist[x] - dist[y])[0];
++      if (!cur) break;
++      done.add(cur);
++      for (const adj of adjacencies.filter((x) => x.device === cur)) {
++        const cost = ifs.find((i) => i.device === cur && i.iface === adj.iface)!.cost;
++        const nd = dist[cur] + cost;
++        if (dist[adj.neighborDevice] === undefined || nd < dist[adj.neighborDevice]) {
++          dist[adj.neighborDevice] = nd;
++          first[adj.neighborDevice] =
++            cur === r ? { iface: adj.iface, nextHop: adj.neighborIp } : first[cur];
++        }
++      }
++    }
++    const best: Record<string, Route> = {};
++    for (const o of ifs) {
++      if (o.device === r || dist[o.device] === undefined) continue;
++      if (ifs.some((m) => m.device === r && m.subnet === o.subnet && m.mask === o.mask)) continue;
++      if (net.devices[r].interfaces && Object.values(net.devices[r].interfaces).some(
++        (i) => i.ip && i.mask && isUp(net, r, i.name) && networkOf(i.ip, i.mask) === o.subnet && i.mask === o.mask,
++      )) continue;
++      const key = `${o.subnet}/${o.mask}`;
++      const metric = dist[o.device] + o.cost;
++      if (!best[key] || metric < best[key].metric) {
++        best[key] = {
++          network: o.subnet,
++          mask: o.mask,
++          prefix: maskToPrefix(o.mask),
++          protocol: "ospf",
++          ad: 110,
++          metric,
++          nextHop: first[o.device].nextHop,
++          iface: first[o.device].iface,
++        };
++      }
++    }
++    routes[r] = Object.values(best);
++  }
++  return { version: net.version, adjacencies, routes };
++}
++
++function ospf(net: NetState): OspfModel {
++  const c = ospfCache.get(net);
++  if (c && c.version === net.version) return c;
++  const m = computeOspf(net);
++  ospfCache.set(net, m);
++  return m;
++}
++
++export function ospfAdjacencies(net: NetState, device: string): OspfAdjacency[] {
++  return ospf(net).adjacencies.filter((a) => a.device === device);
++}
++
++export function routesOf(net: NetState, deviceId: string): Route[] {
++  const dev = net.devices[deviceId];
++  const out: Route[] = [];
++  const connected: Route[] = [];
++  for (const i of Object.values(dev.interfaces)) {
++    if (!i.ip || !i.mask || !isUp(net, deviceId, i.name)) continue;
++    connected.push({
++      network: networkOf(i.ip, i.mask),
++      mask: i.mask,
++      prefix: maskToPrefix(i.mask),
++      protocol: "connected",
++      ad: 0,
++      metric: 0,
++      iface: i.name,
++    });
++  }
++  out.push(...connected);
++
++  const viaConnected = (nh: string) => connected.find((c) => inSubnet(nh, c.network, c.mask));
++
++  if (dev.type === "router") {
++    for (const s of dev.staticRoutes) {
++      const c = viaConnected(s.nextHop);
++      if (!c) continue; // route inactive : prochain saut injoignable
++      out.push({
++        network: s.network,
++        mask: s.mask,
++        prefix: maskToPrefix(s.mask),
++        protocol: "static",
++        ad: 1,
++        metric: 0,
++        nextHop: s.nextHop,
++        iface: c.iface,
++      });
++    }
++    out.push(...(ospf(net).routes[deviceId] ?? []));
++  }
++  if (dev.defaultGateway) {
++    const c = viaConnected(dev.defaultGateway);
++    if (c) {
++      out.push({
++        network: "0.0.0.0",
++        mask: "0.0.0.0",
++        prefix: 0,
++        protocol: "static",
++        ad: 1,
++        metric: 0,
++        nextHop: dev.defaultGateway,
++        iface: c.iface,
++      });
++    }
++  }
++  return out;
++}
++
++export function lookupRoute(net: NetState, deviceId: string, dst: string): Route | undefined {
++  return routesOf(net, deviceId)
++    .filter((r) => inSubnet(dst, r.network, r.mask))
++    .sort((a, b) => b.prefix - a.prefix || a.ad - b.ad || a.metric - b.metric)[0];
++}
++
++// ───────────────────────────── Ping ─────────────────────────────
++
++export function ownsIp(net: NetState, deviceId: string, ip: string): boolean {
++  return Object.values(net.devices[deviceId].interfaces).some(
++    (i) => i.ip === ip && isUp(net, deviceId, i.name),
++  );
++}
++
++export interface TraceResult {
++  ok: boolean;
++  /** "no-route" → réponse ICMP « inaccessible » (U) ; "timeout" → pas de réponse (.) */
++  reason?: "no-route" | "timeout";
++  hops: string[];
++  srcIp?: string;
++  endDevice?: string;
++}
++
++export function traceIp(net: NetState, src: string, dst: string): TraceResult {
++  const hops: string[] = [src];
++  let cur = src;
++  let srcIp: string | undefined;
++  for (let ttl = 0; ttl < 32; ttl++) {
++    if (ownsIp(net, cur, dst)) {
++      return { ok: true, hops, srcIp: srcIp ?? dst, endDevice: cur };
++    }
++    // Seuls les routeurs relaient les paquets qui ne leur sont pas destinés.
++    if (cur !== src && net.devices[cur].type !== "router") return { ok: false, reason: "timeout", hops };
++    const route = lookupRoute(net, cur, dst);
++    if (!route || !route.iface) return { ok: false, reason: "no-route", hops };
++    const nextIp = route.nextHop ?? dst;
++    const iface = net.devices[cur].interfaces[route.iface];
++    if (cur === src) srcIp = iface.ip;
++    const ep = l2Domain(net, { device: cur, iface: route.iface }).find((e) => {
++      const i = net.devices[e.device].interfaces[e.iface];
++      return i.ip === nextIp && isUp(net, e.device, e.iface);
++    });
++    if (!ep) return { ok: false, reason: "timeout", hops };
++    cur = ep.device;
++    hops.push(cur);
++  }
++  return { ok: false, reason: "timeout", hops };
++}
++
++/** Un écho ICMP aller-retour : le chemin retour doit lui aussi exister. */
++export function pingOnce(net: NetState, src: string, dst: string): TraceResult {
++  const fwd = traceIp(net, src, dst);
++  if (!fwd.ok) return fwd;
++  const back = traceIp(net, fwd.endDevice!, fwd.srcIp!);
++  if (!back.ok) return { ok: false, reason: "timeout", hops: fwd.hops };
++  return fwd;
++}
+diff --git a/src/engine/parser.ts b/src/engine/parser.ts
+new file mode 100644
+index 0000000..b421ce4
+--- /dev/null
++++ b/src/engine/parser.ts
+@@ -0,0 +1,185 @@
++// Analyse de commandes façon IOS : abréviations, aide « ? », complétion Tab, erreurs avec marqueur ^.
++import { isValidIp, isValidMask, isValidWildcard } from "./ip";
++import { normalizeIfName } from "./interfaces";
++import type { CliMode, DeviceType } from "./types";
++
++export interface Tok {
++  text: string;
++  col: number;
++}
++
++export function tokenize(line: string): Tok[] {
++  const out: Tok[] = [];
++  const re = /\S+/g;
++  let m: RegExpExecArray | null;
++  while ((m = re.exec(line))) out.push({ text: m[0], col: m.index });
++  return out;
++}
++
++export interface CommandDef<C> {
++  /** Ex. "show ip route", "ip address <ip> <mask>". <rest> absorbe la fin de ligne. */
++  pattern: string;
++  modes: CliMode[];
++  /** Types d'équipement concernés (défaut : routeur + switch). */
++  types?: DeviceType[];
++  /** Description du dernier mot, affichée par « ? ». */
++  help?: string;
++  run: (ctx: C, t: string[]) => string | void;
++}
++
++export function validateParam(kind: string, tok: string): boolean {
++  switch (kind) {
++    case "<ip>":
++      return isValidIp(tok);
++    case "<mask>":
++      return isValidMask(tok);
++    case "<wild>":
++      return isValidWildcard(tok);
++    case "<num>":
++      return /^\d+$/.test(tok);
++    case "<vlanlist>":
++      return /^\d+(?:[,-]\d+)*$/.test(tok);
++    case "<iface>":
++      return normalizeIfName(tok) !== null;
++    case "<ifword>":
++      return /^[a-z]+$/i.test(tok) && normalizeIfName(`${tok}0`) !== null;
++    case "<ifnum>":
++      return /^\d+(?:\/\d+)*$/.test(tok);
++    default:
++      return true; // <text>, <rest>
++  }
++}
++
++type MatchResult = { ok: true; exact: boolean; complete: boolean } | { ok: false; at: number };
++
++function matchOne(toks: string[], input: string[]): MatchResult {
++  let exact = true;
++  for (let i = 0; i < input.length; i++) {
++    const p = toks[i];
++    if (p === undefined) return { ok: false, at: i };
++    if (p === "<rest>") return { ok: true, exact, complete: true };
++    if (p.startsWith("<")) {
++      if (!validateParam(p, input[i])) return { ok: false, at: i };
++      continue;
++    }
++    const t = input[i].toLowerCase();
++    if (t === p) continue;
++    if (p.startsWith(t)) {
++      exact = false;
++      continue;
++    }
++    return { ok: false, at: i };
++  }
++  return { ok: true, exact, complete: input.length === toks.length };
++}
++
++export type Resolution<C> =
++  | { kind: "run"; def: CommandDef<C> }
++  | { kind: "invalid"; index: number }
++  | { kind: "incomplete" }
++  | { kind: "ambiguous"; index: number };
++
++export function resolve<C>(defs: CommandDef<C>[], input: string[]): Resolution<C> {
++  let furthest = 0;
++  let hits: { def: CommandDef<C>; toks: string[]; exact: boolean; complete: boolean }[] = [];
++  for (const def of defs) {
++    const toks = def.pattern.split(" ");
++    const r = matchOne(toks, input);
++    if (r.ok) hits.push({ def, toks, exact: r.exact, complete: r.complete });
++    else furthest = Math.max(furthest, (r as { at: number }).at);
++  }
++  if (!hits.length) return { kind: "invalid", index: furthest };
++
++  const exacts = hits.filter((h) => h.exact);
++  if (exacts.length) hits = exacts;
++
++  if (hits.length > 1) {
++    for (let i = 0; i < input.length; i++) {
++      const lits = new Set(hits.map((h) => h.toks[i] ?? "").filter((t) => t && !t.startsWith("<")));
++      if (lits.size > 1) return { kind: "ambiguous", index: i };
++    }
++  }
++  const complete = hits.find((h) => h.complete);
++  return complete ? { kind: "run", def: complete.def } : { kind: "incomplete" };
++}
++
++const PARAM_LABEL: Record<string, string> = {
++  "<ip>": "A.B.C.D",
++  "<mask>": "A.B.C.D",
++  "<wild>": "A.B.C.D",
++  "<num>": "<number>",
++  "<text>": "WORD",
++  "<rest>": "LINE",
++  "<iface>": "<interface>",
++  "<ifword>": "<interface-type>",
++  "<ifnum>": "<number>",
++  "<vlanlist>": "WORD",
++};
++
++const TOKEN_HELP: Record<string, string> = {
++  show: "Show running system information",
++  ip: "IP information",
++  interface: "Select an interface to configure",
++  interfaces: "Interface status and configuration",
++  no: "Negate a command or set its defaults",
++  switchport: "Set switching mode characteristics",
++  mode: "Set trunking mode of the interface",
++  access: "Set access mode characteristics of the interface",
++  trunk: "Set trunking characteristics of the interface",
++  allowed: "Set allowed VLAN characteristics when interface is in trunking mode",
++  vlan: "VLAN information",
++  router: "Enable a routing process",
++  ospf: "Open Shortest Path First (OSPF)",
++  line: "Configure a terminal line",
++  copy: "Copy from one file to another",
++  "running-config": "Current operating configuration",
++  "startup-config": "Contents of startup configuration",
++  configure: "Enter configuration mode",
++  write: "Write running configuration to memory",
++};
++
++export interface NextToken {
++  token: string;
++  help: string;
++}
++
++export function nextTokens<C>(defs: CommandDef<C>[], input: string[], partial: boolean): NextToken[] {
++  const prefix = partial ? input.slice(0, -1) : input;
++  const n = prefix.length;
++  const last = partial ? input[input.length - 1].toLowerCase() : "";
++  const out = new Map<string, string>();
++  for (const def of defs) {
++    const toks = def.pattern.split(" ");
++    if (!matchOne(toks, prefix).ok) continue;
++    const t = toks[n];
++    if (t === undefined) {
++      if (!partial) out.set("<cr>", out.get("<cr>") ?? "");
++      continue;
++    }
++    if (partial && (t.startsWith("<") || !t.startsWith(last))) continue;
++    const label = t.startsWith("<") ? (PARAM_LABEL[t] ?? t) : t;
++    const help = n === toks.length - 1 ? (def.help ?? "") : (TOKEN_HELP[t] ?? "");
++    if (!out.get(label)) out.set(label, help);
++  }
++  return [...out.entries()]
++    .map(([token, help]) => ({ token, help }))
++    .sort((a, b) => (a.token === "<cr>" ? 1 : b.token === "<cr>" ? -1 : a.token.localeCompare(b.token)));
++}
++
++export function completeToken<C>(defs: CommandDef<C>[], line: string): string {
++  if (!line.trim() || /\s$/.test(line)) return line;
++  const toks = tokenize(line);
++  const input = toks.map((t) => t.text);
++  const n = input.length - 1;
++  const last = input[n].toLowerCase();
++  const lits = new Set<string>();
++  for (const def of defs) {
++    const p = def.pattern.split(" ");
++    if (!matchOne(p, input.slice(0, -1)).ok) continue;
++    const t = p[n];
++    if (t && !t.startsWith("<") && t.startsWith(last)) lits.add(t);
++  }
++  if (lits.size !== 1) return line;
++  const [word] = [...lits];
++  return `${line.slice(0, toks[n].col)}${word} `;
++}
+diff --git a/src/engine/simulator.ts b/src/engine/simulator.ts
+new file mode 100644
+index 0000000..cb86036
+--- /dev/null
++++ b/src/engine/simulator.ts
+@@ -0,0 +1,544 @@
++// Simulateur multi-équipements : sessions CLI, commandes IOS, ping, sauvegarde / restauration.
++import {
++  runningConfig,
++  runningConfigLines,
++  showInterface,
++  showInterfacesTrunk,
++  showIpInterfaceBrief,
++  showIpRoute,
++  showOspfNeighbor,
++  showVlanBrief,
++} from "./config";
++import { inSubnet, isValidIp, networkOf, wildcardToMask } from "./ip";
++import {
++  defaultInterfaceNames,
++  ifaceKind,
++  makeInterface,
++  normalizeIfName,
++  parseVlanList,
++} from "./interfaces";
++import { ifaceStatus, ownsIp, parseEndpoint, pingOnce, type TraceResult } from "./network";
++import { CommandDef, completeToken, nextTokens, resolve, tokenize, type Tok } from "./parser";
++import type { CliMode, DeviceState, NetState, Session, TopologyDef } from "./types";
++
++class CliError extends Error {
++  constructor(
++    public kind: "invalid" | "msg",
++    public index = 0,
++    public text = "",
++  ) {
++    super(text || "invalid");
++  }
++}
++const invalidAt = (index: number) => new CliError("invalid", index);
++const msg = (text: string) => new CliError("msg", 0, text);
++
++interface Ctx {
++  sim: NetworkSimulator;
++  net: NetState;
++  dev: DeviceState;
++  s: Session;
++}
++
++export interface ExecResult {
++  output: string;
++  mode: CliMode;
++  prompt: string;
++  /** true si la commande a été rejetée (syntaxe, mode, valeur invalide). */
++  error: boolean;
++}
++
++export interface Snapshot {
++  devices: Record<string, DeviceState>;
++}
++
++const EXEC: CliMode[] = ["user", "privileged"];
++const CONFIG_SUB: CliMode[] = ["config-if", "config-router", "config-line", "config-vlan"];
++const ROUTER: ("router" | "switch" | "pc")[] = ["router"];
++const SWITCH: ("router" | "switch" | "pc")[] = ["switch"];
++
++function iosPing(dev: DeviceState, dst: string, r: TraceResult): string {
++  const ch = r.ok ? "!" : r.reason === "no-route" ? "U" : ".";
++  const ok = r.ok ? 5 : 0;
++  const L = [
++    "Type escape sequence to abort.",
++    `Sending 5, 100-byte ICMP Echos to ${dst}, timeout is 2 seconds:`,
++    ch.repeat(5),
++    `Success rate is ${r.ok ? 100 : 0} percent (${ok}/5)${r.ok ? ", round-trip min/avg/max = 1/2/4 ms" : ""}`,
++  ];
++  return L.join("\n");
++}
++
++function pcPing(dst: string, r: TraceResult): string {
++  const L = [`Pinging ${dst} with 32 bytes of data:`, ""];
++  for (let i = 0; i < 4; i++) {
++    L.push(
++      r.ok
++        ? `Reply from ${dst}: bytes=32 time<1ms TTL=128`
++        : r.reason === "no-route"
++          ? "Destination host unreachable."
++          : "Request timed out.",
++    );
++  }
++  const got = r.ok ? 4 : 0;
++  L.push("", `Ping statistics for ${dst}:`, `    Packets: Sent = 4, Received = ${got}, Lost = ${4 - got} (${r.ok ? 0 : 100}% loss)`);
++  return L.join("\n");
++}
++
++function buildCommands(): CommandDef<Ctx>[] {
++  const d: CommandDef<Ctx>[] = [];
++  const add = (
++    pattern: string,
++    modes: CliMode[],
++    run: CommandDef<Ctx>["run"],
++    opts: { types?: CommandDef<Ctx>["types"]; help?: string } = {},
++  ) => d.push({ pattern, modes, run, ...opts });
++
++  // ── Navigation entre modes ──
++  add("enable", ["user"], (c) => void (c.s.mode = "privileged"), { help: "Turn on privileged commands" });
++  add("disable", ["privileged"], (c) => void (c.s.mode = "user"), { help: "Turn off privileged commands" });
++  add("exit", ["privileged"], (c) => void (c.s.mode = "user"), { help: "Exit from the EXEC" });
++  add("exit", ["user"], () => {}, { help: "Exit from the EXEC" });
++  add(
++    "configure terminal",
++    ["privileged"],
++    (c) => {
++      c.s.mode = "config";
++      return "Enter configuration commands, one per line.  End with CNTL/Z.";
++    },
++    { help: "Configure from the terminal" },
++  );
++  add("exit", ["config"], (c) => void (c.s.mode = "privileged"), { help: "Exit from configure mode" });
++  add("exit", CONFIG_SUB, (c) => void (c.s.mode = "config"), { help: "Exit from current mode" });
++  add("end", ["config", ...CONFIG_SUB], (c) => void (c.s.mode = "privileged"), { help: "Exit from configure mode" });
++
++  // ── Exec : show ──
++  const priv = (c: Ctx) => {
++    if (c.s.mode === "user") throw msg("% Invalid input detected: privileged command");
++  };
++  add("show running-config", EXEC, (c) => (priv(c), runningConfig(c.dev)), { help: "Current operating configuration" });
++  add(
++    "show startup-config",
++    EXEC,
++    (c) => (priv(c), c.dev.startupConfig ?? "startup-config is not present"),
++    { help: "Contents of startup configuration" },
++  );
++  add("show ip interface brief", EXEC, (c) => showIpInterfaceBrief(c.net, c.dev), { help: "Brief summary of IP status and configuration" });
++  add("show ip route", EXEC, (c) => showIpRoute(c.net, c.dev), { types: ROUTER, help: "IP routing table" });
++  add("show ip ospf neighbor", EXEC, (c) => showOspfNeighbor(c.net, c.dev), { types: ROUTER, help: "Neighbor list" });
++  add("show vlan brief", EXEC, (c) => showVlanBrief(c.dev), { types: SWITCH, help: "VTP all VLAN status in brief" });
++  add("show interfaces trunk", EXEC, (c) => showInterfacesTrunk(c.net, c.dev), { types: SWITCH, help: "Interface trunk information" });
++  add(
++    "show interfaces <iface>",
++    EXEC,
++    (c, t) => showInterface(c.net, c.dev, resolveIface(c, t[2], 2)),
++    { help: "Interface name" },
++  );
++  add(
++    "show interfaces <ifword> <ifnum>",
++    EXEC,
++    (c, t) => showInterface(c.net, c.dev, resolveIface(c, `${t[2]}${t[3]}`, 2)),
++    { help: "Interface number" },
++  );
++  add("show version", EXEC, (c) => `NetAcademy IOS Simulator, device ${c.dev.hostname}\nSimulated device — not a real Cisco IOS image.`, {
++    help: "System hardware and software status",
++  });
++  add("ping <ip>", EXEC, (c, t) => iosPing(c.dev, t[1], pingOnce(c.net, c.dev.id, t[1])), { help: "Send echo messages" });
++  const save = (c: Ctx) => {
++    priv(c);
++    c.dev.startupConfig = runningConfigLines(c.dev).join("\n");
++    return "Building configuration...\n[OK]";
++  };
++  add("copy running-config startup-config", EXEC, save, { help: "Copy to startup-config" });
++  add("write memory", EXEC, save, { help: "Write to NV memory" });
++  add("write", EXEC, save, { help: "Write running configuration to memory" });
++
++  // ── Configuration globale ──
++  add("hostname <text>", ["config"], (c, t) => void (c.dev.hostname = t[1]), { help: "Set system's network name" });
++  const enterIface = (c: Ctx, raw: string, idx: number) => {
++    const name = normalizeIfName(raw);
++    if (!name) throw invalidAt(idx);
++    const kind = ifaceKind(name);
++    if (!c.dev.interfaces[name]) {
++      const okCreate =
++        (kind === "loopback" && c.dev.type === "router") || (kind === "svi" && c.dev.type === "switch");
++      if (!okCreate) throw invalidAt(idx);
++      c.dev.interfaces[name] = makeInterface(name, c.dev.type);
++      if (kind === "svi") c.dev.interfaces[name].shutdown = false;
++    }
++    c.s.mode = "config-if";
++    c.s.iface = name;
++  };
++  add("interface <iface>", ["config"], (c, t) => enterIface(c, t[1], 1), { help: "Interface name" });
++  add("interface <ifword> <ifnum>", ["config"], (c, t) => enterIface(c, `${t[1]}${t[2]}`, 1), { help: "Interface number" });
++  add("vlan <num>", ["config"], (c, t) => {
++    const id = Number(t[1]);
++    if (id < 1 || id > 4094) throw invalidAt(1);
++    c.dev.vlans[id] ??= { id, name: `VLAN${String(id).padStart(4, "0")}` };
++    c.s.mode = "config-vlan";
++    c.s.vlan = id;
++  }, { types: SWITCH, help: "ISL VLAN IDs 1-4094" });
++  add("no vlan <num>", ["config"], (c, t) => {
++    if (Number(t[2]) === 1) throw msg("%Default VLAN 1 may not be deleted.");
++    delete c.dev.vlans[Number(t[2])];
++  }, { types: SWITCH, help: "ISL VLAN IDs 1-4094" });
++  add("ip route <ip> <mask> <ip>", ["config"], (c, t) => {
++    if (networkOf(t[2], t[3]) !== t[2]) throw msg("%Inconsistent address and mask");
++    const exists = c.dev.staticRoutes.some((r) => r.network === t[2] && r.mask === t[3] && r.nextHop === t[4]);
++    if (!exists) c.dev.staticRoutes.push({ network: t[2], mask: t[3], nextHop: t[4] });
++  }, { types: ROUTER, help: "Forwarding router's address" });
++  add("no ip route <ip> <mask> <ip>", ["config"], (c, t) => {
++    c.dev.staticRoutes = c.dev.staticRoutes.filter((r) => !(r.network === t[3] && r.mask === t[4] && r.nextHop === t[5]));
++  }, { types: ROUTER, help: "Forwarding router's address" });
++  add("ip default-gateway <ip>", ["config"], (c, t) => void (c.dev.defaultGateway = t[2]), { types: SWITCH, help: "Specify default gateway" });
++  add("no ip domain-lookup", ["config"], () => {}, { help: "Disable IP Domain Name System hostname translation" });
++  add("router ospf <num>", ["config"], (c, t) => {
++    const pid = Number(t[2]);
++    if (c.dev.ospf && c.dev.ospf.pid !== pid) throw msg("% Only one OSPF process is supported in this simulator.");
++    c.dev.ospf ??= { pid, networks: [] };
++    c.s.mode = "config-router";
++  }, { types: ROUTER, help: "Process ID" });
++  add("no router ospf <num>", ["config"], (c) => void (c.dev.ospf = undefined), { types: ROUTER, help: "Process ID" });
++  add("line console <num>", ["config"], (c) => void (c.s.mode = "config-line"), { help: "Primary terminal line" });
++  add("line vty <num> <num>", ["config"], (c) => void (c.s.mode = "config-line"), { help: "Last Line number" });
++
++  // ── Interface ──
++  const cur = (c: Ctx) => c.dev.interfaces[c.s.iface!];
++  const flapMsgs = (c: Ctx, wasUp: boolean): string => {
++    const n = c.s.iface!;
++    const st = ifaceStatus(c.net, c.dev.id, n);
++    const up = st.status === "up" && st.protocol === "up";
++    if (cur(c).shutdown && wasUp)
++      return `%LINK-5-CHANGED: Interface ${n}, changed state to administratively down\n%LINEPROTO-5-UPDOWN: Line protocol on Interface ${n}, changed state to down`;
++    if (!cur(c).shutdown && up && !wasUp)
++      return `%LINK-3-UPDOWN: Interface ${n}, changed state to up\n%LINEPROTO-5-UPDOWN: Line protocol on Interface ${n}, changed state to up`;
++    return "";
++  };
++  const wasUp = (c: Ctx) => {
++    const st = ifaceStatus(c.net, c.dev.id, c.s.iface!);
++    return st.status === "up" && st.protocol === "up";
++  };
++  add("shutdown", ["config-if"], (c) => {
++    const w = wasUp(c);
++    cur(c).shutdown = true;
++    return flapMsgs(c, w);
++  }, { help: "Shutdown the selected interface" });
++  add("no shutdown", ["config-if"], (c) => {
++    const w = wasUp(c);
++    cur(c).shutdown = false;
++    c.net.version++;
++    return flapMsgs(c, w);
++  }, { help: "Shutdown the selected interface" });
++  add("description <rest>", ["config-if"], (c, t) => void (cur(c).description = t.slice(1).join(" ")), { help: "Interface specific description" });
++  add("no description", ["config-if"], (c) => void (cur(c).description = undefined), { help: "Interface specific description" });
++  add("ip address <ip> <mask>", ["config-if"], (c, t) => {
++    const i = cur(c);
++    if (c.dev.type === "switch" && i.kind === "physical") throw invalidAt(0);
++    const net_ = networkOf(t[2], t[3]);
++    const clash = Object.values(c.dev.interfaces).find(
++      (o) => o.name !== i.name && o.ip && o.mask && networkOf(o.ip, o.mask) === net_ && o.mask === t[3],
++    );
++    if (clash) throw msg(`% ${net_} overlaps with ${clash.name}`);
++    i.ip = t[2];
++    i.mask = t[3];
++  }, { help: "Set the IP address of an interface" });
++  add("no ip address", ["config-if"], (c) => {
++    cur(c).ip = undefined;
++    cur(c).mask = undefined;
++  }, { help: "Remove the IP address of an interface" });
++  add("ip ospf cost <num>", ["config-if"], (c, t) => void (cur(c).ospfCost = Number(t[3])), { types: ROUTER, help: "Interface cost" });
++  const l2 = (c: Ctx) => {
++    if (cur(c).kind !== "physical") throw invalidAt(0);
++    return cur(c);
++  };
++  add("switchport mode access", ["config-if"], (c) => {
++    const i = l2(c);
++    i.switchportMode = "access";
++    i.modeExplicit = true;
++  }, { types: SWITCH, help: "Set trunking mode to ACCESS unconditionally" });
++  add("switchport mode trunk", ["config-if"], (c) => {
++    const i = l2(c);
++    i.switchportMode = "trunk";
++    i.modeExplicit = true;
++  }, { types: SWITCH, help: "Set trunking mode to TRUNK unconditionally" });
++  add("switchport access vlan <num>", ["config-if"], (c, t) => {
++    const i = l2(c);
++    const id = Number(t[3]);
++    if (id < 1 || id > 4094) throw invalidAt(3);
++    let out = "";
++    if (!c.dev.vlans[id]) {
++      c.dev.vlans[id] = { id, name: `VLAN${String(id).padStart(4, "0")}` };
++      out = `% Access VLAN does not exist. Creating vlan ${id}`;
++    }
++    i.accessVlan = id;
++    return out;
++  }, { types: SWITCH, help: "VLAN ID of the VLAN when this port is in access mode" });
++  add("no switchport access vlan", ["config-if"], (c) => void (l2(c).accessVlan = 1), { types: SWITCH, help: "VLAN ID of the VLAN when this port is in access mode" });
++  add("switchport trunk allowed vlan all", ["config-if"], (c) => void (l2(c).trunkAllowed = "all"), { types: SWITCH, help: "all VLANs" });
++  add("switchport trunk allowed vlan add <vlanlist>", ["config-if"], (c, t) => {
++    const i = l2(c);
++    const list = parseVlanList(t[5]);
++    if (!list) throw invalidAt(5);
++    if (i.trunkAllowed !== "all") i.trunkAllowed = [...new Set([...i.trunkAllowed, ...list])];
++  }, { types: SWITCH, help: "VLAN IDs of the allowed VLANs when this port is in trunking mode" });
++  add("switchport trunk allowed vlan <vlanlist>", ["config-if"], (c, t) => {
++    const i = l2(c);
++    const list = parseVlanList(t[4]);
++    if (!list) throw invalidAt(4);
++    i.trunkAllowed = list;
++  }, { types: SWITCH, help: "VLAN IDs of the allowed VLANs when this port is in trunking mode" });
++
++  // ── OSPF ──
++  add("network <ip> <wild> area <num>", ["config-router"], (c, t) => {
++    const o = c.dev.ospf!;
++    if (!o.networks.some((n) => n.network === t[1] && n.wildcard === t[2] && n.area === t[4]))
++      o.networks.push({ network: t[1], wildcard: t[2], area: t[4] });
++  }, { help: "Area ID" });
++  add("no network <ip> <wild> area <num>", ["config-router"], (c, t) => {
++    const o = c.dev.ospf!;
++    o.networks = o.networks.filter((n) => !(n.network === t[2] && n.wildcard === t[3] && n.area === t[5]));
++  }, { help: "Area ID" });
++  add("router-id <ip>", ["config-router"], (c, t) => void (c.dev.ospf!.routerId = t[1]), { help: "OSPF router-id in IP address format" });
++
++  // ── VLAN / lignes ──
++  add("name <text>", ["config-vlan"], (c, t) => void (c.dev.vlans[c.s.vlan!].name = t[1]), { help: "The ascii name for the VLAN" });
++  add("password <text>", ["config-line"], () => {}, { help: "Set a password" });
++  add("login", ["config-line"], () => {}, { help: "Enable password checking" });
++  add("logging synchronous", ["config-line"], () => {}, { help: "Synchronized message output" });
++  add("exec-timeout <num> <num>", ["config-line"], () => {}, { help: "Set the EXEC timeout" });
++
++  // ── Poste de travail (PC) ──
++  add("ping <ip>", ["pc"], (c, t) => pcPing(t[1], pingOnce(c.net, c.dev.id, t[1])), { types: ["pc"], help: "Send echo messages" });
++  add("ipconfig", ["pc"], (c) => {
++    const i = Object.values(c.dev.interfaces)[0];
++    return [
++      `${i.name} Connection:(default port)`,
++      "",
++      `   IPv4 Address....................: ${i.ip ?? "0.0.0.0"}`,
++      `   Subnet Mask.....................: ${i.mask ?? "0.0.0.0"}`,
++      `   Default Gateway.................: ${c.dev.defaultGateway ?? "0.0.0.0"}`,
++    ].join("\n");
++  }, { types: ["pc"], help: "Display IP configuration" });
++  add("ip address <ip> <mask> <ip>", ["pc"], (c, t) => {
++    const i = Object.values(c.dev.interfaces)[0];
++    i.ip = t[2];
++    i.mask = t[3];
++    c.dev.defaultGateway = t[4];
++  }, { types: ["pc"], help: "Default gateway" });
++  add("ip address <ip> <mask>", ["pc"], (c, t) => {
++    const i = Object.values(c.dev.interfaces)[0];
++    i.ip = t[2];
++    i.mask = t[3];
++    c.dev.defaultGateway = undefined;
++  }, { types: ["pc"], help: "Subnet mask" });
++  return d;
++}
++
++function resolveIface(c: Ctx, raw: string, idx: number): string {
++  const n = normalizeIfName(raw);
++  if (!n || !c.dev.interfaces[n]) throw invalidAt(idx);
++  return n;
++}
++
++const COMMANDS = buildCommands();
++
++export class NetworkSimulator {
++  net: NetState;
++  private sessions: Record<string, Session> = {};
++  private lastError = false;
++
++  constructor(def: TopologyDef, initialConfigs: Record<string, string[]> = {}) {
++    const devices: Record<string, DeviceState> = {};
++    def.devices.forEach((dd, idx) => {
++      const dev: DeviceState = {
++        id: dd.id,
++        type: dd.type,
++        hostname: dd.hostname ?? dd.id,
++        label: dd.label,
++        x: dd.x ?? 100 + idx * 150,
++        y: dd.y ?? 100,
++        interfaces: {},
++        vlans: dd.type === "switch" ? { 1: { id: 1, name: "default" } } : {},
++        staticRoutes: [],
++      };
++      for (const n of defaultInterfaceNames(dd.type)) dev.interfaces[n] = makeInterface(n, dd.type);
++      if (dd.type === "switch") dev.interfaces["Vlan1"] = makeInterface("Vlan1", "switch");
++      devices[dd.id] = dev;
++    });
++    const links = def.links.map((l) => {
++      const a = parseEndpoint(l.a);
++      const b = parseEndpoint(l.b);
++      for (const e of [a, b]) {
++        if (!devices[e.device]?.interfaces[e.iface]) throw new Error(`Lien invalide : ${e.device}:${e.iface} n'existe pas`);
++      }
++      return { a, b };
++    });
++    this.net = { devices, links, version: 0 };
++    for (const id of Object.keys(devices)) this.sessions[id] = { mode: this.baseMode(id) };
++
++    for (const [id, lines] of Object.entries(initialConfigs)) {
++      if (!devices[id]) throw new Error(`Configuration initiale pour un équipement inconnu : ${id}`);
++      this.sessions[id].mode = devices[id].type === "pc" ? "pc" : "config";
++      for (const line of lines) {
++        const r = this.execute(id, line);
++        if (r.error) {
++          throw new Error(`Configuration initiale invalide sur ${id} : "${line}" → ${r.output.replace(/\n/g, " | ")}`);
++        }
++      }
++      this.sessions[id] = { mode: this.baseMode(id) };
++      devices[id].startupConfig = runningConfigLines(devices[id]).join("\n");
++    }
++  }
++
++  private baseMode(id: string): CliMode {
++    return this.net.devices[id].type === "pc" ? "pc" : "user";
++  }
++
++  deviceIds(): string[] {
++    return Object.keys(this.net.devices);
++  }
++
++  getDevice(id: string): DeviceState {
++    return this.net.devices[id];
++  }
++
++  getMode(id: string): CliMode {
++    return this.sessions[id].mode;
++  }
++
++  getPrompt(id: string): string {
++    const h = this.net.devices[id].hostname;
++    switch (this.sessions[id].mode) {
++      case "user":
++      case "pc":
++        return `${h}>`;
++      case "privileged":
++        return `${h}#`;
++      case "config":
++        return `${h}(config)#`;
++      case "config-if":
++        return `${h}(config-if)#`;
++      case "config-line":
++        return `${h}(config-line)#`;
++      case "config-router":
++        return `${h}(config-router)#`;
++      case "config-vlan":
++        return `${h}(config-vlan)#`;
++    }
++  }
++
++  private defsFor(id: string, mode: CliMode): CommandDef<Ctx>[] {
++    const type = this.net.devices[id].type;
++    return COMMANDS.filter((c) => c.modes.includes(mode) && (c.types ?? ["router", "switch"]).includes(type));
++  }
++
++  private ctx(id: string): Ctx {
++    return { sim: this, net: this.net, dev: this.net.devices[id], s: this.sessions[id] };
++  }
++
++  private fail(prompt: string, toks: Tok[], index: number, kind: "invalid" | "incomplete" | "ambiguous"): string {
++    if (kind === "incomplete") return "% Incomplete command.";
++    if (kind === "ambiguous") return `% Ambiguous command:  "${toks[index].text}"`;
++    const col = (toks[Math.min(index, toks.length - 1)]?.col ?? 0) + prompt.length;
++    return `${" ".repeat(col)}^\n% Invalid input detected at '^' marker.`;
++  }
++
++  execute(id: string, line: string): ExecResult {
++    const s = this.sessions[id];
++    const promptBefore = this.getPrompt(id);
++    const toks = tokenize(line);
++    let output = "";
++    this.lastError = false;
++
++    if (toks.length) {
++      let mode = s.mode;
++      let words = toks;
++      let restoreMode: CliMode | null = null;
++      if (mode.startsWith("config") && toks[0].text.toLowerCase() === "do" && toks.length > 1) {
++        restoreMode = mode;
++        mode = "privileged";
++        words = toks.slice(1);
++        s.mode = "privileged";
++      }
++      try {
++        output = this.run(id, mode, words, promptBefore) ?? "";
++      } catch (e) {
++        if (e instanceof CliError) {
++          this.lastError = true;
++          output =
++            e.kind === "msg" ? e.text : this.fail(promptBefore, words, e.index, "invalid");
++        } else throw e;
++      } finally {
++        if (restoreMode) s.mode = restoreMode;
++      }
++    }
++    this.net.version++;
++    return { output, mode: s.mode, prompt: this.getPrompt(id), error: this.lastError };
++  }
++
++  private run(id: string, mode: CliMode, words: Tok[], prompt: string): string | undefined {
++    const input = words.map((w) => w.text);
++    let r = resolve(this.defsFor(id, mode), input);
++    let fallbackToConfig = false;
++    if (r.kind === "invalid" && CONFIG_SUB.includes(mode)) {
++      const g = resolve(this.defsFor(id, "config"), input);
++      if (g.kind === "run") {
++        r = g;
++        fallbackToConfig = true;
++      }
++    }
++    if (r.kind !== "run") {
++      this.lastError = true;
++      return this.fail(prompt, words, r.kind === "incomplete" ? 0 : r.index, r.kind);
++    }
++    if (fallbackToConfig) this.sessions[id].mode = "config";
++    return r.def.run(this.ctx(id), input) as string | undefined;
++  }
++
++  /** Aide contextuelle : texte affiché quand l'utilisateur tape « ? ». */
++  help(id: string, line: string): string {
++    const mode = this.sessions[id].mode;
++    const defs = [
++      ...this.defsFor(id, mode),
++      ...(CONFIG_SUB.includes(mode) ? this.defsFor(id, "config") : []),
++    ];
++    const trimmed = line.trimEnd();
++    const input = tokenize(trimmed).map((t) => t.text);
++    const partial = trimmed.length > 0 && !/\s$/.test(line);
++    const next = nextTokens(defs, input, partial);
++    if (!next.length) return "% Unrecognized command";
++    if (partial) return next.map((n) => n.token).join("  ");
++    return next.map((n) => `  ${n.token.padEnd(16)}${n.help}`.trimEnd()).join("\n");
++  }
++
++  complete(id: string, line: string): string {
++    const mode = this.sessions[id].mode;
++    const defs = [
++      ...this.defsFor(id, mode),
++      ...(CONFIG_SUB.includes(mode) ? this.defsFor(id, "config") : []),
++    ];
++    return completeToken(defs, line);
++  }
++
++  /** Test de connectivité entre un équipement et une adresse IP. */
++  ping(from: string, toIp: string): boolean {
++    if (!isValidIp(toIp)) return false;
++    return pingOnce(this.net, from, toIp).ok;
++  }
++
++  runningConfigLines(id: string): string[] {
++    return runningConfigLines(this.net.devices[id]);
++  }
++
++  snapshot(): Snapshot {
++    return { devices: JSON.parse(JSON.stringify(this.net.devices)) };
++  }
++
++  restore(snap: Snapshot): void {
++    this.net.devices = JSON.parse(JSON.stringify(snap.devices));
++    this.net.version++;
++    for (const id of Object.keys(this.net.devices)) this.sessions[id] = { mode: this.baseMode(id) };
++  }
++}
++
++export { inSubnet, ownsIp, wildcardToMask };
+diff --git a/src/engine/types.ts b/src/engine/types.ts
+new file mode 100644
+index 0000000..876a97d
+--- /dev/null
++++ b/src/engine/types.ts
+@@ -0,0 +1,94 @@
++export type DeviceType = "router" | "switch" | "pc";
++
++export type CliMode =
++  | "user"
++  | "privileged"
++  | "config"
++  | "config-if"
++  | "config-line"
++  | "config-router"
++  | "config-vlan"
++  | "pc";
++
++export interface InterfaceState {
++  name: string;
++  kind: "physical" | "loopback" | "svi";
++  ip?: string;
++  mask?: string;
++  shutdown: boolean;
++  description?: string;
++  /** Couche 2 (switchs uniquement) */
++  switchportMode: "access" | "trunk";
++  modeExplicit?: boolean;
++  accessVlan: number;
++  trunkAllowed: number[] | "all";
++  ospfCost?: number;
++}
++
++export interface StaticRoute {
++  network: string;
++  mask: string;
++  nextHop: string;
++}
++
++export interface OspfNetwork {
++  network: string;
++  wildcard: string;
++  area: string;
++}
++
++export interface OspfProcess {
++  pid: number;
++  routerId?: string;
++  networks: OspfNetwork[];
++}
++
++export interface VlanState {
++  id: number;
++  name: string;
++}
++
++export interface DeviceState {
++  id: string;
++  type: DeviceType;
++  hostname: string;
++  label?: string;
++  x: number;
++  y: number;
++  interfaces: Record<string, InterfaceState>;
++  vlans: Record<number, VlanState>;
++  staticRoutes: StaticRoute[];
++  ospf?: OspfProcess;
++  defaultGateway?: string;
++  startupConfig?: string;
++}
++
++export interface Endpoint {
++  device: string;
++  iface: string;
++}
++
++export interface Link {
++  a: Endpoint;
++  b: Endpoint;
++}
++
++export interface NetState {
++  devices: Record<string, DeviceState>;
++  links: Link[];
++  /** Incrémenté à chaque commande ; sert à invalider les caches de calcul. */
++  version: number;
++}
++
++/** Définition de topologie telle qu'écrite dans les fichiers de lab. */
++export interface TopologyDef {
++  devices: { id: string; type: DeviceType; hostname?: string; label?: string; x?: number; y?: number }[];
++  /** Extrémités au format "R1:Gi0/0" */
++  links: { a: string; b: string }[];
++}
++
++export interface Session {
++  mode: CliMode;
++  iface?: string;
++  vlan?: number;
++}
+diff --git a/src/labs/cisco-interface-basics.json b/src/labs/cisco-interface-basics.json
+new file mode 100644
+index 0000000..f6977fb
+--- /dev/null
++++ b/src/labs/cisco-interface-basics.json
+@@ -0,0 +1,60 @@
++{
++  "id": "cisco-interface-basics",
++  "title": "Configurer une interface de routeur",
++  "description": "Nommez un routeur, donnez une adresse IP à son interface, activez-la et vérifiez la liaison avec un voisin.",
++  "category": "fondamentaux",
++  "difficulty": "débutant",
++  "estimatedMinutes": 15,
++  "xpReward": 100,
++  "instructions": [
++    "Le routeur **R1** vient d'être installé : il s'appelle encore `Router` et son interface est désactivée. Il est relié à **R2**, déjà configuré avec l'adresse `10.0.0.2`.",
++    "Passez en mode privilégié avec `enable`, puis en configuration globale avec `configure terminal`.",
++    "Nommez le routeur `R1`, puis configurez l'interface `GigabitEthernet0/0` : description `LIEN-VERS-R2`, adresse `10.0.0.1` avec le masque `255.255.255.0`, puis activez-la avec `no shutdown`.",
++    "Revenez en mode privilégié (`end`), testez la liaison avec `ping 10.0.0.2`, puis enregistrez avec `write memory`."
++  ],
++  "topology": {
++    "devices": [
++      { "id": "R1", "type": "router", "hostname": "Router", "x": 25, "y": 50 },
++      { "id": "R2", "type": "router", "hostname": "R2", "x": 75, "y": 50 }
++    ],
++    "links": [{ "a": "R1:Gi0/0", "b": "R2:Gi0/0" }]
++  },
++  "initialConfigs": {
++    "R2": ["hostname R2", "interface GigabitEthernet0/0", "ip address 10.0.0.2 255.255.255.0", "no shutdown"]
++  },
++  "objectives": [
++    { "id": "hostname", "description": "Nommer le routeur « R1 »", "check": { "type": "hostname-is", "device": "R1", "hostname": "R1" } },
++    {
++      "id": "description",
++      "description": "Décrire l'interface : LIEN-VERS-R2",
++      "check": { "type": "running-config-contains", "device": "R1", "lines": ["description LIEN-VERS-R2"] }
++    },
++    {
++      "id": "ip",
++      "description": "Configurer Gi0/0 en 10.0.0.1/24 et l'activer",
++      "check": { "type": "interfaces-ip", "device": "R1", "interfaces": [{ "iface": "Gi0/0", "ip": "10.0.0.1", "mask": "255.255.255.0" }] }
++    },
++    { "id": "ping", "description": "Joindre R2 (10.0.0.2) avec un ping", "check": { "type": "ping-succeeds", "from": "R1", "to": "10.0.0.2" } },
++    {
++      "id": "save",
++      "description": "Enregistrer la configuration (write memory)",
++      "check": { "type": "startup-config-contains", "device": "R1", "lines": ["hostname R1", "ip address 10.0.0.1 255.255.255.0"] }
++    }
++  ],
++  "hints": [
++    "Les interfaces d'un routeur sont désactivées par défaut : pensez à `no shutdown`.",
++    "Pour entrer dans l'interface : `interface gigabitethernet 0/0` (abrégé : `int g0/0`).",
++    "Le ping ne répond que si les deux extrémités du lien sont actives. Vérifiez avec `show ip interface brief`."
++  ],
++  "solution": {
++    "R1": [
++      "hostname R1",
++      "interface GigabitEthernet0/0",
++      "description LIEN-VERS-R2",
++      "ip address 10.0.0.1 255.255.255.0",
++      "no shutdown",
++      "end",
++      "write memory"
++    ]
++  }
++}
+diff --git a/src/labs/cisco-static-routing.json b/src/labs/cisco-static-routing.json
+new file mode 100644
+index 0000000..28431ac
+--- /dev/null
++++ b/src/labs/cisco-static-routing.json
+@@ -0,0 +1,98 @@
++{
++  "id": "cisco-static-routing",
++  "title": "Routage statique entre deux routeurs",
++  "description": "Reliez deux réseaux locaux à travers deux routeurs en configurant les interfaces et les routes statiques aller et retour.",
++  "category": "routage",
++  "difficulty": "intermédiaire",
++  "estimatedMinutes": 30,
++  "xpReward": 250,
++  "instructions": [
++    "Deux sites doivent communiquer : **PC1** (`192.168.1.10`) derrière **R1**, et **PC2** (`192.168.2.10`) derrière **R2**. Les postes sont déjà configurés avec leur passerelle.",
++    "Plan d'adressage : R1 `Gi0/0` = `192.168.1.1/24` (LAN 1), R1 `Gi0/1` = `10.0.0.1/30` (liaison), R2 `Gi0/0` = `10.0.0.2/30` (liaison), R2 `Gi0/1` = `192.168.2.1/24` (LAN 2). Pensez à activer chaque interface.",
++    "Ajoutez sur chaque routeur une route statique vers le LAN distant, avec `ip route <réseau> <masque> <prochain saut>`.",
++    "Testez avec `ping 192.168.2.10` depuis PC1. Si le ping échoue, observez la table de routage avec `show ip route` sur chaque routeur."
++  ],
++  "topology": {
++    "devices": [
++      { "id": "PC1", "type": "pc", "hostname": "PC1", "x": 8, "y": 50 },
++      { "id": "R1", "type": "router", "hostname": "R1", "x": 34, "y": 50 },
++      { "id": "R2", "type": "router", "hostname": "R2", "x": 66, "y": 50 },
++      { "id": "PC2", "type": "pc", "hostname": "PC2", "x": 92, "y": 50 }
++    ],
++    "links": [
++      { "a": "PC1:Fa0", "b": "R1:Gi0/0" },
++      { "a": "R1:Gi0/1", "b": "R2:Gi0/0" },
++      { "a": "R2:Gi0/1", "b": "PC2:Fa0" }
++    ]
++  },
++  "initialConfigs": {
++    "PC1": ["ip address 192.168.1.10 255.255.255.0 192.168.1.1"],
++    "PC2": ["ip address 192.168.2.10 255.255.255.0 192.168.2.1"],
++    "R1": ["hostname R1"],
++    "R2": ["hostname R2"]
++  },
++  "objectives": [
++    {
++      "id": "r1-ip",
++      "description": "R1 : Gi0/0 en 192.168.1.1/24 et Gi0/1 en 10.0.0.1/30, interfaces actives",
++      "check": {
++        "type": "interfaces-ip",
++        "device": "R1",
++        "interfaces": [
++          { "iface": "Gi0/0", "ip": "192.168.1.1", "mask": "255.255.255.0" },
++          { "iface": "Gi0/1", "ip": "10.0.0.1", "mask": "255.255.255.252" }
++        ]
++      }
++    },
++    {
++      "id": "r2-ip",
++      "description": "R2 : Gi0/0 en 10.0.0.2/30 et Gi0/1 en 192.168.2.1/24, interfaces actives",
++      "check": {
++        "type": "interfaces-ip",
++        "device": "R2",
++        "interfaces": [
++          { "iface": "Gi0/0", "ip": "10.0.0.2", "mask": "255.255.255.252" },
++          { "iface": "Gi0/1", "ip": "192.168.2.1", "mask": "255.255.255.0" }
++        ]
++      }
++    },
++    {
++      "id": "r1-route",
++      "description": "R1 : route statique vers 192.168.2.0/24",
++      "check": { "type": "route-exists", "device": "R1", "network": "192.168.2.0", "mask": "255.255.255.0", "protocol": "static" }
++    },
++    {
++      "id": "r2-route",
++      "description": "R2 : route statique vers 192.168.1.0/24",
++      "check": { "type": "route-exists", "device": "R2", "network": "192.168.1.0", "mask": "255.255.255.0", "protocol": "static" }
++    },
++    { "id": "ping-pc", "description": "PC1 joint PC2 (192.168.2.10)", "check": { "type": "ping-succeeds", "from": "PC1", "to": "192.168.2.10" } }
++  ],
++  "hints": [
++    "Un masque /30 s'écrit `255.255.255.252`. Chaque interface doit être activée avec `no shutdown`.",
++    "Sur R1, le prochain saut vers le LAN 2 est l'adresse de R2 sur la liaison : `ip route 192.168.2.0 255.255.255.0 10.0.0.2`.",
++    "Un ping a besoin d'un chemin aller ET retour : R2 doit aussi savoir joindre 192.168.1.0/24 via 10.0.0.1."
++  ],
++  "solution": {
++    "R1": [
++      "interface GigabitEthernet0/0",
++      "ip address 192.168.1.1 255.255.255.0",
++      "no shutdown",
++      "interface GigabitEthernet0/1",
++      "ip address 10.0.0.1 255.255.255.252",
++      "no shutdown",
++      "exit",
++      "ip route 192.168.2.0 255.255.255.0 10.0.0.2"
++    ],
++    "R2": [
++      "interface GigabitEthernet0/0",
++      "ip address 10.0.0.2 255.255.255.252",
++      "no shutdown",
++      "interface GigabitEthernet0/1",
++      "ip address 192.168.2.1 255.255.255.0",
++      "no shutdown",
++      "exit",
++      "ip route 192.168.1.0 255.255.255.0 10.0.0.1"
++    ]
++  }
++}
+diff --git a/src/labs/cisco-vlan-trunk.json b/src/labs/cisco-vlan-trunk.json
+new file mode 100644
+index 0000000..5c9aa3b
+--- /dev/null
++++ b/src/labs/cisco-vlan-trunk.json
+@@ -0,0 +1,129 @@
++{
++  "id": "cisco-vlan-trunk",
++  "title": "VLAN et trunk entre deux switchs",
++  "description": "Isolez deux services sur les mêmes switchs avec des VLAN, puis reliez les switchs par un lien trunk 802.1Q.",
++  "category": "switching",
++  "difficulty": "intermédiaire",
++  "estimatedMinutes": 25,
++  "xpReward": 200,
++  "instructions": [
++    "Deux services partagent les mêmes switchs : la **Comptabilité** (VLAN 10, `COMPTA`) avec PC1 et PC2, et les **RH** (VLAN 20, `RH`) avec PC3 et PC4. Tous les postes sont dans le même sous-réseau `192.168.1.0/24`.",
++    "Créez les VLAN 10 et 20 sur **SW1 et SW2**, puis affectez les ports : `Fa0/1` en VLAN 10 et `Fa0/2` en VLAN 20 sur chaque switch (`switchport mode access`, `switchport access vlan ...`).",
++    "Le lien entre les switchs (`Fa0/24`) est désactivé. Réactivez-le des deux côtés et passez-le en trunk autorisant les VLAN 10 et 20.",
++    "Depuis les postes, vérifiez : PC1 doit joindre PC2, PC3 doit joindre PC4, mais PC1 ne doit **pas** joindre PC3. Utilisez `show vlan brief` et `show interfaces trunk`."
++  ],
++  "topology": {
++    "devices": [
++      { "id": "PC1", "type": "pc", "hostname": "PC1", "x": 10, "y": 22 },
++      { "id": "PC3", "type": "pc", "hostname": "PC3", "x": 10, "y": 78 },
++      { "id": "SW1", "type": "switch", "hostname": "SW1", "x": 36, "y": 50 },
++      { "id": "SW2", "type": "switch", "hostname": "SW2", "x": 64, "y": 50 },
++      { "id": "PC2", "type": "pc", "hostname": "PC2", "x": 90, "y": 22 },
++      { "id": "PC4", "type": "pc", "hostname": "PC4", "x": 90, "y": 78 }
++    ],
++    "links": [
++      { "a": "PC1:Fa0", "b": "SW1:Fa0/1" },
++      { "a": "PC3:Fa0", "b": "SW1:Fa0/2" },
++      { "a": "SW1:Fa0/24", "b": "SW2:Fa0/24" },
++      { "a": "PC2:Fa0", "b": "SW2:Fa0/1" },
++      { "a": "PC4:Fa0", "b": "SW2:Fa0/2" }
++    ]
++  },
++  "initialConfigs": {
++    "PC1": ["ip address 192.168.1.1 255.255.255.0"],
++    "PC2": ["ip address 192.168.1.2 255.255.255.0"],
++    "PC3": ["ip address 192.168.1.3 255.255.255.0"],
++    "PC4": ["ip address 192.168.1.4 255.255.255.0"],
++    "SW1": ["interface FastEthernet0/24", "shutdown"],
++    "SW2": ["interface FastEthernet0/24", "shutdown"]
++  },
++  "objectives": [
++    {
++      "id": "vlans-sw1",
++      "description": "SW1 : créer les VLAN 10 (COMPTA) et 20 (RH)",
++      "check": { "type": "vlans-exist", "device": "SW1", "vlans": [{ "id": 10, "name": "COMPTA" }, { "id": 20, "name": "RH" }] }
++    },
++    {
++      "id": "vlans-sw2",
++      "description": "SW2 : créer les VLAN 10 (COMPTA) et 20 (RH)",
++      "check": { "type": "vlans-exist", "device": "SW2", "vlans": [{ "id": 10, "name": "COMPTA" }, { "id": 20, "name": "RH" }] }
++    },
++    {
++      "id": "access-sw1",
++      "description": "SW1 : Fa0/1 en accès VLAN 10, Fa0/2 en accès VLAN 20",
++      "check": {
++        "type": "switchports",
++        "device": "SW1",
++        "ports": [
++          { "iface": "Fa0/1", "mode": "access", "accessVlan": 10 },
++          { "iface": "Fa0/2", "mode": "access", "accessVlan": 20 }
++        ]
++      }
++    },
++    {
++      "id": "access-sw2",
++      "description": "SW2 : Fa0/1 en accès VLAN 10, Fa0/2 en accès VLAN 20",
++      "check": {
++        "type": "switchports",
++        "device": "SW2",
++        "ports": [
++          { "iface": "Fa0/1", "mode": "access", "accessVlan": 10 },
++          { "iface": "Fa0/2", "mode": "access", "accessVlan": 20 }
++        ]
++      }
++    },
++    {
++      "id": "trunk",
++      "description": "Trunk Fa0/24 actif des deux côtés, VLAN 10 et 20 autorisés",
++      "check": { "type": "switchports", "device": "SW1", "ports": [{ "iface": "Fa0/24", "mode": "trunk", "trunkAllows": [10, 20] }] }
++    },
++    {
++      "id": "trunk-sw2",
++      "description": "SW2 : même configuration trunk sur Fa0/24",
++      "check": { "type": "switchports", "device": "SW2", "ports": [{ "iface": "Fa0/24", "mode": "trunk", "trunkAllows": [10, 20] }] }
++    },
++    { "id": "ping-compta", "description": "PC1 joint PC2 (VLAN 10, à travers le trunk)", "check": { "type": "ping-succeeds", "from": "PC1", "to": "192.168.1.2" } },
++    { "id": "ping-rh", "description": "PC3 joint PC4 (VLAN 20, à travers le trunk)", "check": { "type": "ping-succeeds", "from": "PC3", "to": "192.168.1.4" } },
++    { "id": "isolation", "description": "PC1 ne joint pas PC3 (VLAN différents)", "check": { "type": "ping-fails", "from": "PC1", "to": "192.168.1.3" } }
++  ],
++  "hints": [
++    "Sur chaque switch : `vlan 10` puis `name COMPTA`, `vlan 20` puis `name RH`. Utilisez `exit` entre les deux.",
++    "Pour un port d'accès : `interface fa0/1`, `switchport mode access`, `switchport access vlan 10`.",
++    "Le lien trunk doit être configuré des DEUX côtés : `no shutdown`, `switchport mode trunk`, `switchport trunk allowed vlan 10,20`.",
++    "Si PC1 joint toujours PC3, vérifiez avec `show vlan brief` que Fa0/1 et Fa0/2 ne sont plus dans le VLAN 1."
++  ],
++  "solution": {
++    "SW1": [
++      "vlan 10",
++      "name COMPTA",
++      "vlan 20",
++      "name RH",
++      "interface FastEthernet0/1",
++      "switchport mode access",
++      "switchport access vlan 10",
++      "interface FastEthernet0/2",
++      "switchport mode access",
++      "switchport access vlan 20",
++      "interface FastEthernet0/24",
++      "no shutdown",
++      "switchport mode trunk",
++      "switchport trunk allowed vlan 10,20"
++    ],
++    "SW2": [
++      "vlan 10",
++      "name COMPTA",
++      "vlan 20",
++      "name RH",
++      "interface FastEthernet0/1",
++      "switchport mode access",
++      "switchport access vlan 10",
++      "interface FastEthernet0/2",
++      "switchport mode access",
++      "switchport access vlan 20",
++      "interface FastEthernet0/24",
++      "no shutdown",
++      "switchport mode trunk",
++      "switchport trunk allowed vlan 10,20"
++    ]
++  }
++}
+diff --git a/src/labs/index.ts b/src/labs/index.ts
+new file mode 100644
+index 0000000..7a4dfd8
+--- /dev/null
++++ b/src/labs/index.ts
+@@ -0,0 +1,16 @@
++import { LabSchema, type Lab } from "./schema";
++
++const files = import.meta.glob("./*.json", { eager: true, import: "default" }) as Record<string, unknown>;
++
++/** Tous les labs Cisco, validés au chargement (une erreur de format est signalée avec le nom du fichier). */
++export const ciscoLabs: Lab[] = Object.entries(files)
++  .map(([path, raw]) => {
++    const parsed = LabSchema.safeParse(raw);
++    if (!parsed.success) throw new Error(`Lab invalide (${path}) : ${parsed.error.message}`);
++    return parsed.data as unknown as Lab;
++  })
++  .sort((a, b) => a.title.localeCompare(b.title, "fr"));
++
++export const getLab = (id: string): Lab | undefined => ciscoLabs.find((l) => l.id === id);
++
++export type { Lab };
+diff --git a/src/labs/labels.ts b/src/labs/labels.ts
+new file mode 100644
+index 0000000..a726751
+--- /dev/null
++++ b/src/labs/labels.ts
+@@ -0,0 +1,13 @@
++export const CATEGORY_LABEL: Record<string, string> = {
++  fondamentaux: "Fondamentaux",
++  switching: "Commutation",
++  routage: "Routage",
++  securite: "Sécurité",
++  voip: "VoIP",
++};
++
++export const DIFFICULTY_STYLE: Record<string, string> = {
++  "débutant": "bg-primary/10 text-primary",
++  "intermédiaire": "bg-accent/10 text-accent",
++  "avancé": "bg-destructive/10 text-destructive",
++};
+diff --git a/src/labs/schema.ts b/src/labs/schema.ts
+new file mode 100644
+index 0000000..e3d5232
+--- /dev/null
++++ b/src/labs/schema.ts
+@@ -0,0 +1,50 @@
++import { z } from "zod";
++import { CheckSchema, type Check } from "@/engine/checks";
++import type { TopologyDef } from "@/engine/types";
++
++export const LabSchema = z.object({
++  id: z.string().regex(/^[a-z0-9-]+$/),
++  title: z.string(),
++  description: z.string(),
++  category: z.enum(["fondamentaux", "switching", "routage", "securite", "voip"]),
++  difficulty: z.enum(["débutant", "intermédiaire", "avancé"]),
++  estimatedMinutes: z.number().positive(),
++  xpReward: z.number().nonnegative(),
++  /** Paragraphes d'instructions ; `code` entre backticks est mis en forme. */
++  instructions: z.array(z.string()),
++  topology: z.object({
++    devices: z.array(
++      z.object({
++        id: z.string(),
++        type: z.enum(["router", "switch", "pc"]),
++        hostname: z.string().optional(),
++        label: z.string().optional(),
++        x: z.number().min(0).max(100).optional(),
++        y: z.number().min(0).max(100).optional(),
++      }),
++    ),
++    links: z.array(z.object({ a: z.string(), b: z.string() })),
++  }),
++  /** Commandes appliquées au démarrage (mode config, ou mode PC pour les postes). */
++  initialConfigs: z.record(z.array(z.string())).default({}),
++  objectives: z.array(z.object({ id: z.string(), description: z.string(), check: CheckSchema })).min(1),
++  hints: z.array(z.string()).default([]),
++  /** Solution de référence (utilisée par les tests et le bouton « Voir la solution »). */
++  solution: z.record(z.array(z.string())).default({}),
++});
++
++export interface Lab {
++  id: string;
++  title: string;
++  description: string;
++  category: "fondamentaux" | "switching" | "routage" | "securite" | "voip";
++  difficulty: "débutant" | "intermédiaire" | "avancé";
++  estimatedMinutes: number;
++  xpReward: number;
++  instructions: string[];
++  topology: TopologyDef;
++  initialConfigs: Record<string, string[]>;
++  objectives: { id: string; description: string; check: Check }[];
++  hints: string[];
++  solution: Record<string, string[]>;
++}
+diff --git a/src/lib/cisco-progress.ts b/src/lib/cisco-progress.ts
+new file mode 100644
+index 0000000..ba36375
+--- /dev/null
++++ b/src/lib/cisco-progress.ts
+@@ -0,0 +1,32 @@
++// Progression des labs Cisco, stockée dans le navigateur (localStorage).
++// Étape suivante prévue : table Supabase pour synchroniser la progression entre appareils.
++const KEY = "netacademy.cisco-labs.v1";
++
++export interface LabProgress {
++  completedAt?: string;
++  bestObjectives: number;
++}
++
++export function loadProgress(): Record<string, LabProgress> {
++  try {
++    return JSON.parse(localStorage.getItem(KEY) ?? "{}");
++  } catch {
++    return {};
++  }
++}
++
++export function saveProgress(labId: string, objectivesDone: number, total: number): LabProgress {
++  const all = loadProgress();
++  const prev = all[labId];
++  const next: LabProgress = {
++    bestObjectives: Math.max(prev?.bestObjectives ?? 0, objectivesDone),
++    completedAt: prev?.completedAt ?? (objectivesDone >= total ? new Date().toISOString() : undefined),
++  };
++  all[labId] = next;
++  try {
++    localStorage.setItem(KEY, JSON.stringify(all));
++  } catch {
++    /* stockage indisponible : la progression reste en mémoire pour la session */
++  }
++  return next;
++}
+diff --git a/src/pages/CiscoLabPlayer.test.tsx b/src/pages/CiscoLabPlayer.test.tsx
+new file mode 100644
+index 0000000..e7e334c
+--- /dev/null
++++ b/src/pages/CiscoLabPlayer.test.tsx
+@@ -0,0 +1,56 @@
++import { fireEvent, render, screen } from "@testing-library/react";
++import { MemoryRouter, Route, Routes } from "react-router-dom";
++import { beforeAll, describe, expect, it, vi } from "vitest";
++import CiscoLabPlayer from "./CiscoLabPlayer";
++
++vi.mock("@/components/Navbar", () => ({ default: () => null }));
++vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn() }) }));
++
++beforeAll(() => {
++  Element.prototype.scrollIntoView = vi.fn();
++});
++
++const renderLab = (id: string) =>
++  render(
++    <MemoryRouter initialEntries={[`/cisco-labs/${id}`]}>
++      <Routes>
++        <Route path="/cisco-labs/:labId" element={<CiscoLabPlayer />} />
++      </Routes>
++    </MemoryRouter>,
++  );
++
++const type = (input: HTMLElement, text: string) => {
++  fireEvent.change(input, { target: { value: text } });
++  fireEvent.keyDown(input, { key: "Enter" });
++};
++
++describe("lecteur de lab Cisco", () => {
++  it("met à jour les objectifs quand on tape des commandes", () => {
++    renderLab("cisco-interface-basics");
++    expect(screen.getByText("0 / 5")).toBeTruthy();
++    const input = () => screen.getByRole("textbox");
++
++    type(input(), "enable");
++    type(input(), "configure terminal");
++    type(input(), "hostname R1");
++    expect(screen.getByText("1 / 5")).toBeTruthy();
++    // le prompt reflète le nouveau nom
++    expect(screen.getByText("R1(config)#")).toBeTruthy();
++  });
++
++  it("affiche l'aide contextuelle avec « ? » et les erreurs IOS", () => {
++    renderLab("cisco-interface-basics");
++    const input = screen.getByRole("textbox");
++    type(input, "enable");
++    fireEvent.change(input, { target: { value: "show " } });
++    fireEvent.keyDown(input, { key: "?" });
++    expect(screen.getAllByText(/running-config/).length).toBeGreaterThan(0);
++    type(input, "foo");
++    expect(screen.getByText(/Invalid input detected/)).toBeTruthy();
++  });
++
++  it("affiche une page 404 pour un lab inconnu", () => {
++    renderLab("inconnu");
++    expect(screen.queryByRole("textbox")).toBeNull();
++  });
++});
+diff --git a/src/pages/CiscoLabPlayer.tsx b/src/pages/CiscoLabPlayer.tsx
+new file mode 100644
+index 0000000..ffae448
+--- /dev/null
++++ b/src/pages/CiscoLabPlayer.tsx
+@@ -0,0 +1,248 @@
++import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
++import { Link, useParams } from "react-router-dom";
++import { ArrowLeft, CheckCircle2, Circle, Eye, Lightbulb, RotateCcw } from "lucide-react";
++import { toast } from "sonner";
++import Navbar from "@/components/Navbar";
++import { Button } from "@/components/ui/button";
++import IosTerminal, { TermLine } from "@/components/cisco/IosTerminal";
++import NetworkTopology from "@/components/cisco/NetworkTopology";
++import { evaluateCheck } from "@/engine/checks";
++import { NetworkSimulator } from "@/engine/simulator";
++import { getLab } from "@/labs";
++import { saveProgress } from "@/lib/cisco-progress";
++import { CATEGORY_LABEL, DIFFICULTY_STYLE } from "@/labs/labels";
++import NotFound from "./NotFound";
++
++/** Mise en forme minimale : `code` et **gras**. */
++function inline(text: string): ReactNode[] {
++  return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/).map((part, i) => {
++    if (part.startsWith("`")) {
++      return (
++        <code key={i} className="font-terminal text-[0.85em] px-1.5 py-0.5 rounded bg-muted text-foreground">
++          {part.slice(1, -1)}
++        </code>
++      );
++    }
++    if (part.startsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
++    return <Fragment key={i}>{part}</Fragment>;
++  });
++}
++
++interface DeviceUi {
++  lines: TermLine[];
++  history: string[];
++}
++
++const CiscoLabPlayer = () => {
++  const { labId } = useParams();
++  const lab = getLab(labId ?? "");
++  if (!lab) return <NotFound />;
++  return <Player key={lab.id} lab={lab} />;
++};
++
++const Player = ({ lab }: { lab: NonNullable<ReturnType<typeof getLab>> }) => {
++  const sim = useMemo(() => new NetworkSimulator(lab.topology, lab.initialConfigs), [lab]);
++  const baseline = useMemo(() => sim.snapshot(), [sim]);
++  const [tick, setTick] = useState(0);
++  const firstId = lab.topology.devices[0].id;
++  const [active, setActive] = useState(firstId);
++  const ui = useRef<Record<string, DeviceUi>>({});
++  const [hintsShown, setHintsShown] = useState(0);
++  const [showSolution, setShowSolution] = useState(false);
++  const celebrated = useRef(false);
++
++  const term = (id: string): DeviceUi => {
++    if (!ui.current[id]) {
++      const dev = sim.getDevice(id);
++      ui.current[id] = {
++        history: [],
++        lines: [
++          {
++            kind: "output",
++            text:
++              dev.type === "pc"
++                ? `Poste ${dev.hostname}. Commandes : ipconfig, ping <ip>, ip address <ip> <masque> [passerelle].`
++                : `Connecté à ${dev.hostname}. Tapez ? pour l'aide, Tab pour compléter.`,
++          },
++        ],
++      };
++    }
++    return ui.current[id];
++  };
++
++  const results = useMemo(
++    () => lab.objectives.map((o) => ({ ...o, result: evaluateCheck(sim, o.check) })),
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++    [sim, lab, tick],
++  );
++  const done = results.filter((r) => r.result.ok).length;
++  const allDone = done === results.length;
++
++  useEffect(() => {
++    saveProgress(lab.id, done, results.length);
++    if (allDone && !celebrated.current) {
++      celebrated.current = true;
++      toast.success(`Lab terminé : +${lab.xpReward} XP`, { description: lab.title });
++    }
++    if (!allDone) celebrated.current = false;
++  }, [done, allDone, lab, results.length]);
++
++  const submit = (line: string) => {
++    const t = term(active);
++    const prompt = sim.getPrompt(active);
++    const r = sim.execute(active, line);
++    t.lines.push({ kind: "input", text: `${prompt}${line}` });
++    if (r.output) t.lines.push({ kind: r.error ? "error" : "output", text: r.output });
++    if (line.trim()) t.history.push(line);
++    setTick((n) => n + 1);
++  };
++
++  const help = (line: string) => {
++    const t = term(active);
++    t.lines.push({ kind: "input", text: `${sim.getPrompt(active)}${line}?` });
++    t.lines.push({ kind: "output", text: sim.help(active, line) });
++    setTick((n) => n + 1);
++  };
++
++  const reset = () => {
++    sim.restore(baseline);
++    ui.current = {};
++    setHintsShown(0);
++    setShowSolution(false);
++    setTick((n) => n + 1);
++    toast("Lab réinitialisé");
++  };
++
++  const t = term(active);
++  const device = sim.getDevice(active);
++
++  return (
++    <div className="min-h-screen bg-background">
++      <Navbar />
++      <main className="container pt-20 pb-12">
++        <Link to="/cisco-labs" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
++          <ArrowLeft className="w-4 h-4" aria-hidden /> Tous les labs Cisco
++        </Link>
++
++        <header className="flex flex-wrap items-center gap-3 mb-6">
++          <h1 className="text-2xl md:text-3xl font-display font-bold mr-auto">{lab.title}</h1>
++          <span className="text-sm text-muted-foreground">{CATEGORY_LABEL[lab.category]}</span>
++          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${DIFFICULTY_STYLE[lab.difficulty]}`}>{lab.difficulty}</span>
++          <span className="text-sm font-medium text-primary">{lab.xpReward} XP</span>
++        </header>
++
++        <div className="grid lg:grid-cols-[minmax(300px,380px)_1fr] gap-6 items-start">
++          {/* Énoncé et objectifs */}
++          <aside className="space-y-5">
++            <section className="rounded-xl border bg-card p-5 space-y-3">
++              <h2 className="font-display font-semibold">Énoncé</h2>
++              {lab.instructions.map((p, i) => (
++                <p key={i} className="text-sm leading-relaxed text-muted-foreground">
++                  {inline(p)}
++                </p>
++              ))}
++            </section>
++
++            <section className="rounded-xl border bg-card p-5" aria-labelledby="obj-title">
++              <div className="flex items-baseline justify-between mb-3">
++                <h2 id="obj-title" className="font-display font-semibold">
++                  Objectifs
++                </h2>
++                <span className="text-sm text-muted-foreground" aria-live="polite">
++                  {done} / {results.length}
++                </span>
++              </div>
++              <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-4" aria-hidden>
++                <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${(done / results.length) * 100}%` }} />
++              </div>
++              <ul className="space-y-2.5">
++                {results.map((o) => (
++                  <li key={o.id} className="flex gap-2.5 text-sm">
++                    {o.result.ok ? (
++                      <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-primary" aria-label="Validé" />
++                    ) : (
++                      <Circle className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" aria-label="À faire" />
++                    )}
++                    <span className={o.result.ok ? "text-foreground" : "text-muted-foreground"}>{o.description}</span>
++                  </li>
++                ))}
++              </ul>
++              {allDone && (
++                <p className="mt-4 text-sm font-medium text-primary" role="status">
++                  Tous les objectifs sont validés. Bien joué !
++                </p>
++              )}
++            </section>
++
++            <section className="rounded-xl border bg-card p-5 space-y-3">
++              <h2 className="font-display font-semibold">Aide</h2>
++              {lab.hints.slice(0, hintsShown).map((h, i) => (
++                <p key={i} className="text-sm leading-relaxed text-muted-foreground flex gap-2">
++                  <Lightbulb className="w-4 h-4 mt-0.5 shrink-0 text-accent" aria-hidden />
++                  <span>{inline(h)}</span>
++                </p>
++              ))}
++              <div className="flex flex-wrap gap-2">
++                {hintsShown < lab.hints.length && (
++                  <Button size="sm" variant="outline" onClick={() => setHintsShown((n) => n + 1)}>
++                    <Lightbulb className="w-4 h-4 mr-1.5" aria-hidden /> Indice ({hintsShown}/{lab.hints.length})
++                  </Button>
++                )}
++                {Object.keys(lab.solution).length > 0 && (
++                  <Button size="sm" variant="outline" onClick={() => setShowSolution((v) => !v)} aria-expanded={showSolution}>
++                    <Eye className="w-4 h-4 mr-1.5" aria-hidden /> {showSolution ? "Masquer la solution" : "Voir la solution"}
++                  </Button>
++                )}
++                <Button size="sm" variant="ghost" onClick={reset}>
++                  <RotateCcw className="w-4 h-4 mr-1.5" aria-hidden /> Réinitialiser
++                </Button>
++              </div>
++              {showSolution && (
++                <div className="space-y-3 pt-1">
++                  {Object.entries(lab.solution).map(([id, lines]) => (
++                    <div key={id}>
++                      <p className="text-xs font-medium text-muted-foreground mb-1">{sim.getDevice(id).label ?? id}</p>
++                      <pre className="rounded-md bg-terminal text-terminal-fg font-terminal text-xs p-3 overflow-x-auto">{lines.join("\n")}</pre>
++                    </div>
++                  ))}
++                </div>
++              )}
++            </section>
++          </aside>
++
++          {/* Topologie et terminaux */}
++          <div className="space-y-4 min-w-0">
++            <NetworkTopology sim={sim} version={tick} activeId={active} onSelect={setActive} />
++            <div role="tablist" aria-label="Équipements" className="flex flex-wrap gap-1.5">
++              {lab.topology.devices.map((d) => (
++                <button
++                  key={d.id}
++                  role="tab"
++                  aria-selected={active === d.id}
++                  onClick={() => setActive(d.id)}
++                  className={`px-3 py-1.5 rounded-md text-sm font-terminal transition-colors ${
++                    active === d.id ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
++                  }`}
++                >
++                  {sim.getDevice(d.id).hostname}
++                </button>
++              ))}
++            </div>
++            <IosTerminal
++              key={active}
++              title={`${device.hostname} (${active})`}
++              prompt={sim.getPrompt(active)}
++              lines={t.lines}
++              history={t.history}
++              onSubmit={submit}
++              onHelp={help}
++              onTab={(l) => sim.complete(active, l)}
++            />
++          </div>
++        </div>
++      </main>
++    </div>
++  );
++};
++
++export default CiscoLabPlayer;
+diff --git a/src/pages/CiscoLabs.tsx b/src/pages/CiscoLabs.tsx
+new file mode 100644
+index 0000000..cd2e2ae
+--- /dev/null
++++ b/src/pages/CiscoLabs.tsx
+@@ -0,0 +1,88 @@
++import { useMemo, useState } from "react";
++import { Link } from "react-router-dom";
++import { CheckCircle2, Clock, Network } from "lucide-react";
++import Navbar from "@/components/Navbar";
++import { ciscoLabs } from "@/labs";
++import { CATEGORY_LABEL, DIFFICULTY_STYLE } from "@/labs/labels";
++import { loadProgress } from "@/lib/cisco-progress";
++
++const CiscoLabs = () => {
++  const [category, setCategory] = useState<string>("all");
++  const progress = useMemo(loadProgress, []);
++  const categories = ["all", ...Array.from(new Set(ciscoLabs.map((l) => l.category)))];
++  const shown = ciscoLabs.filter((l) => category === "all" || l.category === category);
++  const doneCount = ciscoLabs.filter((l) => progress[l.id]?.completedAt).length;
++
++  return (
++    <div className="min-h-screen bg-background">
++      <Navbar />
++      <main className="container pt-24 pb-16">
++        <header className="mb-8 max-w-3xl">
++          <div className="flex items-center gap-3 mb-2">
++            <Network className="w-8 h-8 text-primary" aria-hidden />
++            <h1 className="text-3xl md:text-4xl font-display font-bold">Labs Cisco CLI</h1>
++          </div>
++          <p className="text-muted-foreground text-lg">
++            Configurez de vrais équipements simulés en ligne de commande. Chaque lab vérifie l'état du réseau, pas ce que vous avez tapé : plusieurs
++            solutions sont possibles.
++          </p>
++          <p className="text-sm text-muted-foreground mt-2">
++            {doneCount} / {ciscoLabs.length} labs terminés
++          </p>
++        </header>
++
++        <div className="flex flex-wrap gap-2 mb-6" role="group" aria-label="Filtrer par catégorie">
++          {categories.map((c) => (
++            <button
++              key={c}
++              onClick={() => setCategory(c)}
++              aria-pressed={category === c}
++              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
++                category === c ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:text-foreground"
++              }`}
++            >
++              {c === "all" ? "Tous" : CATEGORY_LABEL[c]}
++            </button>
++          ))}
++        </div>
++
++        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
++          {shown.map((lab) => {
++            const p = progress[lab.id];
++            return (
++              <Link
++                key={lab.id}
++                to={`/cisco-labs/${lab.id}`}
++                className="rounded-xl border bg-card p-5 hover:shadow-md hover:border-primary/40 transition-all flex flex-col focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
++              >
++                <div className="flex items-center justify-between mb-3">
++                  <span className="text-xs font-medium text-muted-foreground">{CATEGORY_LABEL[lab.category]}</span>
++                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${DIFFICULTY_STYLE[lab.difficulty]}`}>{lab.difficulty}</span>
++                </div>
++                <h2 className="text-lg font-display font-semibold mb-2">{lab.title}</h2>
++                <p className="text-sm text-muted-foreground leading-relaxed mb-4 flex-1">{lab.description}</p>
++                <div className="flex items-center justify-between text-sm text-muted-foreground">
++                  <span className="inline-flex items-center gap-1.5">
++                    <Clock className="w-4 h-4" aria-hidden /> {lab.estimatedMinutes} min ·{" "}
++                    <span className="font-medium text-primary">{lab.xpReward} XP</span>
++                  </span>
++                  {p?.completedAt ? (
++                    <span className="inline-flex items-center gap-1 text-primary font-medium">
++                      <CheckCircle2 className="w-4 h-4" aria-hidden /> Terminé
++                    </span>
++                  ) : p ? (
++                    <span>
++                      {p.bestObjectives} / {lab.objectives.length} objectifs
++                    </span>
++                  ) : null}
++                </div>
++              </Link>
++            );
++          })}
++        </div>
++      </main>
++    </div>
++  );
++};
++
++export default CiscoLabs;

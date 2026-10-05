@@ -1,0 +1,129 @@
+{
+  "id": "cisco-vlan-trunk",
+  "title": "VLAN et trunk entre deux switchs",
+  "description": "Isolez deux services sur les mêmes switchs avec des VLAN, puis reliez les switchs par un lien trunk 802.1Q.",
+  "category": "switching",
+  "difficulty": "intermédiaire",
+  "estimatedMinutes": 25,
+  "xpReward": 200,
+  "instructions": [
+    "Deux services partagent les mêmes switchs : la **Comptabilité** (VLAN 10, `COMPTA`) avec PC1 et PC2, et les **RH** (VLAN 20, `RH`) avec PC3 et PC4. Tous les postes sont dans le même sous-réseau `192.168.1.0/24`.",
+    "Créez les VLAN 10 et 20 sur **SW1 et SW2**, puis affectez les ports : `Fa0/1` en VLAN 10 et `Fa0/2` en VLAN 20 sur chaque switch (`switchport mode access`, `switchport access vlan ...`).",
+    "Le lien entre les switchs (`Fa0/24`) est désactivé. Réactivez-le des deux côtés et passez-le en trunk autorisant les VLAN 10 et 20.",
+    "Depuis les postes, vérifiez : PC1 doit joindre PC2, PC3 doit joindre PC4, mais PC1 ne doit **pas** joindre PC3. Utilisez `show vlan brief` et `show interfaces trunk`."
+  ],
+  "topology": {
+    "devices": [
+      { "id": "PC1", "type": "pc", "hostname": "PC1", "x": 10, "y": 22 },
+      { "id": "PC3", "type": "pc", "hostname": "PC3", "x": 10, "y": 78 },
+      { "id": "SW1", "type": "switch", "hostname": "SW1", "x": 36, "y": 50 },
+      { "id": "SW2", "type": "switch", "hostname": "SW2", "x": 64, "y": 50 },
+      { "id": "PC2", "type": "pc", "hostname": "PC2", "x": 90, "y": 22 },
+      { "id": "PC4", "type": "pc", "hostname": "PC4", "x": 90, "y": 78 }
+    ],
+    "links": [
+      { "a": "PC1:Fa0", "b": "SW1:Fa0/1" },
+      { "a": "PC3:Fa0", "b": "SW1:Fa0/2" },
+      { "a": "SW1:Fa0/24", "b": "SW2:Fa0/24" },
+      { "a": "PC2:Fa0", "b": "SW2:Fa0/1" },
+      { "a": "PC4:Fa0", "b": "SW2:Fa0/2" }
+    ]
+  },
+  "initialConfigs": {
+    "PC1": ["ip address 192.168.1.1 255.255.255.0"],
+    "PC2": ["ip address 192.168.1.2 255.255.255.0"],
+    "PC3": ["ip address 192.168.1.3 255.255.255.0"],
+    "PC4": ["ip address 192.168.1.4 255.255.255.0"],
+    "SW1": ["interface FastEthernet0/24", "shutdown"],
+    "SW2": ["interface FastEthernet0/24", "shutdown"]
+  },
+  "objectives": [
+    {
+      "id": "vlans-sw1",
+      "description": "SW1 : créer les VLAN 10 (COMPTA) et 20 (RH)",
+      "check": { "type": "vlans-exist", "device": "SW1", "vlans": [{ "id": 10, "name": "COMPTA" }, { "id": 20, "name": "RH" }] }
+    },
+    {
+      "id": "vlans-sw2",
+      "description": "SW2 : créer les VLAN 10 (COMPTA) et 20 (RH)",
+      "check": { "type": "vlans-exist", "device": "SW2", "vlans": [{ "id": 10, "name": "COMPTA" }, { "id": 20, "name": "RH" }] }
+    },
+    {
+      "id": "access-sw1",
+      "description": "SW1 : Fa0/1 en accès VLAN 10, Fa0/2 en accès VLAN 20",
+      "check": {
+        "type": "switchports",
+        "device": "SW1",
+        "ports": [
+          { "iface": "Fa0/1", "mode": "access", "accessVlan": 10 },
+          { "iface": "Fa0/2", "mode": "access", "accessVlan": 20 }
+        ]
+      }
+    },
+    {
+      "id": "access-sw2",
+      "description": "SW2 : Fa0/1 en accès VLAN 10, Fa0/2 en accès VLAN 20",
+      "check": {
+        "type": "switchports",
+        "device": "SW2",
+        "ports": [
+          { "iface": "Fa0/1", "mode": "access", "accessVlan": 10 },
+          { "iface": "Fa0/2", "mode": "access", "accessVlan": 20 }
+        ]
+      }
+    },
+    {
+      "id": "trunk",
+      "description": "Trunk Fa0/24 actif des deux côtés, VLAN 10 et 20 autorisés",
+      "check": { "type": "switchports", "device": "SW1", "ports": [{ "iface": "Fa0/24", "mode": "trunk", "trunkAllows": [10, 20] }] }
+    },
+    {
+      "id": "trunk-sw2",
+      "description": "SW2 : même configuration trunk sur Fa0/24",
+      "check": { "type": "switchports", "device": "SW2", "ports": [{ "iface": "Fa0/24", "mode": "trunk", "trunkAllows": [10, 20] }] }
+    },
+    { "id": "ping-compta", "description": "PC1 joint PC2 (VLAN 10, à travers le trunk)", "check": { "type": "ping-succeeds", "from": "PC1", "to": "192.168.1.2" } },
+    { "id": "ping-rh", "description": "PC3 joint PC4 (VLAN 20, à travers le trunk)", "check": { "type": "ping-succeeds", "from": "PC3", "to": "192.168.1.4" } },
+    { "id": "isolation", "description": "PC1 ne joint pas PC3 (VLAN différents)", "check": { "type": "ping-fails", "from": "PC1", "to": "192.168.1.3" } }
+  ],
+  "hints": [
+    "Sur chaque switch : `vlan 10` puis `name COMPTA`, `vlan 20` puis `name RH`. Utilisez `exit` entre les deux.",
+    "Pour un port d'accès : `interface fa0/1`, `switchport mode access`, `switchport access vlan 10`.",
+    "Le lien trunk doit être configuré des DEUX côtés : `no shutdown`, `switchport mode trunk`, `switchport trunk allowed vlan 10,20`.",
+    "Si PC1 joint toujours PC3, vérifiez avec `show vlan brief` que Fa0/1 et Fa0/2 ne sont plus dans le VLAN 1."
+  ],
+  "solution": {
+    "SW1": [
+      "vlan 10",
+      "name COMPTA",
+      "vlan 20",
+      "name RH",
+      "interface FastEthernet0/1",
+      "switchport mode access",
+      "switchport access vlan 10",
+      "interface FastEthernet0/2",
+      "switchport mode access",
+      "switchport access vlan 20",
+      "interface FastEthernet0/24",
+      "no shutdown",
+      "switchport mode trunk",
+      "switchport trunk allowed vlan 10,20"
+    ],
+    "SW2": [
+      "vlan 10",
+      "name COMPTA",
+      "vlan 20",
+      "name RH",
+      "interface FastEthernet0/1",
+      "switchport mode access",
+      "switchport access vlan 10",
+      "interface FastEthernet0/2",
+      "switchport mode access",
+      "switchport access vlan 20",
+      "interface FastEthernet0/24",
+      "no shutdown",
+      "switchport mode trunk",
+      "switchport trunk allowed vlan 10,20"
+    ]
+  }
+}

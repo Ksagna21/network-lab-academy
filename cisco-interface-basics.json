@@ -1,0 +1,60 @@
+{
+  "id": "cisco-interface-basics",
+  "title": "Configurer une interface de routeur",
+  "description": "Nommez un routeur, donnez une adresse IP à son interface, activez-la et vérifiez la liaison avec un voisin.",
+  "category": "fondamentaux",
+  "difficulty": "débutant",
+  "estimatedMinutes": 15,
+  "xpReward": 100,
+  "instructions": [
+    "Le routeur **R1** vient d'être installé : il s'appelle encore `Router` et son interface est désactivée. Il est relié à **R2**, déjà configuré avec l'adresse `10.0.0.2`.",
+    "Passez en mode privilégié avec `enable`, puis en configuration globale avec `configure terminal`.",
+    "Nommez le routeur `R1`, puis configurez l'interface `GigabitEthernet0/0` : description `LIEN-VERS-R2`, adresse `10.0.0.1` avec le masque `255.255.255.0`, puis activez-la avec `no shutdown`.",
+    "Revenez en mode privilégié (`end`), testez la liaison avec `ping 10.0.0.2`, puis enregistrez avec `write memory`."
+  ],
+  "topology": {
+    "devices": [
+      { "id": "R1", "type": "router", "hostname": "Router", "x": 25, "y": 50 },
+      { "id": "R2", "type": "router", "hostname": "R2", "x": 75, "y": 50 }
+    ],
+    "links": [{ "a": "R1:Gi0/0", "b": "R2:Gi0/0" }]
+  },
+  "initialConfigs": {
+    "R2": ["hostname R2", "interface GigabitEthernet0/0", "ip address 10.0.0.2 255.255.255.0", "no shutdown"]
+  },
+  "objectives": [
+    { "id": "hostname", "description": "Nommer le routeur « R1 »", "check": { "type": "hostname-is", "device": "R1", "hostname": "R1" } },
+    {
+      "id": "description",
+      "description": "Décrire l'interface : LIEN-VERS-R2",
+      "check": { "type": "running-config-contains", "device": "R1", "lines": ["description LIEN-VERS-R2"] }
+    },
+    {
+      "id": "ip",
+      "description": "Configurer Gi0/0 en 10.0.0.1/24 et l'activer",
+      "check": { "type": "interfaces-ip", "device": "R1", "interfaces": [{ "iface": "Gi0/0", "ip": "10.0.0.1", "mask": "255.255.255.0" }] }
+    },
+    { "id": "ping", "description": "Joindre R2 (10.0.0.2) avec un ping", "check": { "type": "ping-succeeds", "from": "R1", "to": "10.0.0.2" } },
+    {
+      "id": "save",
+      "description": "Enregistrer la configuration (write memory)",
+      "check": { "type": "startup-config-contains", "device": "R1", "lines": ["hostname R1", "ip address 10.0.0.1 255.255.255.0"] }
+    }
+  ],
+  "hints": [
+    "Les interfaces d'un routeur sont désactivées par défaut : pensez à `no shutdown`.",
+    "Pour entrer dans l'interface : `interface gigabitethernet 0/0` (abrégé : `int g0/0`).",
+    "Le ping ne répond que si les deux extrémités du lien sont actives. Vérifiez avec `show ip interface brief`."
+  ],
+  "solution": {
+    "R1": [
+      "hostname R1",
+      "interface GigabitEthernet0/0",
+      "description LIEN-VERS-R2",
+      "ip address 10.0.0.1 255.255.255.0",
+      "no shutdown",
+      "end",
+      "write memory"
+    ]
+  }
+}

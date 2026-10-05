@@ -1,0 +1,98 @@
+{
+  "id": "cisco-static-routing",
+  "title": "Routage statique entre deux routeurs",
+  "description": "Reliez deux réseaux locaux à travers deux routeurs en configurant les interfaces et les routes statiques aller et retour.",
+  "category": "routage",
+  "difficulty": "intermédiaire",
+  "estimatedMinutes": 30,
+  "xpReward": 250,
+  "instructions": [
+    "Deux sites doivent communiquer : **PC1** (`192.168.1.10`) derrière **R1**, et **PC2** (`192.168.2.10`) derrière **R2**. Les postes sont déjà configurés avec leur passerelle.",
+    "Plan d'adressage : R1 `Gi0/0` = `192.168.1.1/24` (LAN 1), R1 `Gi0/1` = `10.0.0.1/30` (liaison), R2 `Gi0/0` = `10.0.0.2/30` (liaison), R2 `Gi0/1` = `192.168.2.1/24` (LAN 2). Pensez à activer chaque interface.",
+    "Ajoutez sur chaque routeur une route statique vers le LAN distant, avec `ip route <réseau> <masque> <prochain saut>`.",
+    "Testez avec `ping 192.168.2.10` depuis PC1. Si le ping échoue, observez la table de routage avec `show ip route` sur chaque routeur."
+  ],
+  "topology": {
+    "devices": [
+      { "id": "PC1", "type": "pc", "hostname": "PC1", "x": 8, "y": 50 },
+      { "id": "R1", "type": "router", "hostname": "R1", "x": 34, "y": 50 },
+      { "id": "R2", "type": "router", "hostname": "R2", "x": 66, "y": 50 },
+      { "id": "PC2", "type": "pc", "hostname": "PC2", "x": 92, "y": 50 }
+    ],
+    "links": [
+      { "a": "PC1:Fa0", "b": "R1:Gi0/0" },
+      { "a": "R1:Gi0/1", "b": "R2:Gi0/0" },
+      { "a": "R2:Gi0/1", "b": "PC2:Fa0" }
+    ]
+  },
+  "initialConfigs": {
+    "PC1": ["ip address 192.168.1.10 255.255.255.0 192.168.1.1"],
+    "PC2": ["ip address 192.168.2.10 255.255.255.0 192.168.2.1"],
+    "R1": ["hostname R1"],
+    "R2": ["hostname R2"]
+  },
+  "objectives": [
+    {
+      "id": "r1-ip",
+      "description": "R1 : Gi0/0 en 192.168.1.1/24 et Gi0/1 en 10.0.0.1/30, interfaces actives",
+      "check": {
+        "type": "interfaces-ip",
+        "device": "R1",
+        "interfaces": [
+          { "iface": "Gi0/0", "ip": "192.168.1.1", "mask": "255.255.255.0" },
+          { "iface": "Gi0/1", "ip": "10.0.0.1", "mask": "255.255.255.252" }
+        ]
+      }
+    },
+    {
+      "id": "r2-ip",
+      "description": "R2 : Gi0/0 en 10.0.0.2/30 et Gi0/1 en 192.168.2.1/24, interfaces actives",
+      "check": {
+        "type": "interfaces-ip",
+        "device": "R2",
+        "interfaces": [
+          { "iface": "Gi0/0", "ip": "10.0.0.2", "mask": "255.255.255.252" },
+          { "iface": "Gi0/1", "ip": "192.168.2.1", "mask": "255.255.255.0" }
+        ]
+      }
+    },
+    {
+      "id": "r1-route",
+      "description": "R1 : route statique vers 192.168.2.0/24",
+      "check": { "type": "route-exists", "device": "R1", "network": "192.168.2.0", "mask": "255.255.255.0", "protocol": "static" }
+    },
+    {
+      "id": "r2-route",
+      "description": "R2 : route statique vers 192.168.1.0/24",
+      "check": { "type": "route-exists", "device": "R2", "network": "192.168.1.0", "mask": "255.255.255.0", "protocol": "static" }
+    },
+    { "id": "ping-pc", "description": "PC1 joint PC2 (192.168.2.10)", "check": { "type": "ping-succeeds", "from": "PC1", "to": "192.168.2.10" } }
+  ],
+  "hints": [
+    "Un masque /30 s'écrit `255.255.255.252`. Chaque interface doit être activée avec `no shutdown`.",
+    "Sur R1, le prochain saut vers le LAN 2 est l'adresse de R2 sur la liaison : `ip route 192.168.2.0 255.255.255.0 10.0.0.2`.",
+    "Un ping a besoin d'un chemin aller ET retour : R2 doit aussi savoir joindre 192.168.1.0/24 via 10.0.0.1."
+  ],
+  "solution": {
+    "R1": [
+      "interface GigabitEthernet0/0",
+      "ip address 192.168.1.1 255.255.255.0",
+      "no shutdown",
+      "interface GigabitEthernet0/1",
+      "ip address 10.0.0.1 255.255.255.252",
+      "no shutdown",
+      "exit",
+      "ip route 192.168.2.0 255.255.255.0 10.0.0.2"
+    ],
+    "R2": [
+      "interface GigabitEthernet0/0",
+      "ip address 10.0.0.2 255.255.255.252",
+      "no shutdown",
+      "interface GigabitEthernet0/1",
+      "ip address 192.168.2.1 255.255.255.0",
+      "no shutdown",
+      "exit",
+      "ip route 192.168.1.0 255.255.255.0 10.0.0.1"
+    ]
+  }
+}
